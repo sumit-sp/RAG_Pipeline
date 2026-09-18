@@ -23,7 +23,7 @@ Phase 0 exit criteria met: repo scaffolded, all 8 documents in place under `data
 - [x] Minimal Streamlit UI, tested live in-browser against the running API
 - [x] Ingestion run: **837 chunks indexed** from the Phase 0 corpus
 - [x] Manually verified against the spec's own temporal-conflict example question ("When do Annex III high-risk AI system obligations become applicable?") — correctly answered **2 December 2027** (the Omnibus-amended date), citing the AI Act, the Digital Omnibus, and Article 6 guidance together. This is a qualitative spot-check, not an eval number — Phase 2 builds the real harness.
-- [ ] Deploy to Render or Railway — blocked on you creating an account (deliberately not something I do on your behalf) and a public GitHub remote to connect it to. Code is otherwise deploy-ready (all config via env vars, `requirements.txt` present).
+- [ ] Deploy to Render or Railway — **explicitly deferred** by the user. They're setting up a separate GitHub account to push this repo to before connecting it to Render/Railway; that account setup and the push/deploy itself will happen in a later session. Code is deploy-ready in the meantime (all config via env vars, `requirements.txt` present, no hardcoded paths).
 
 Known rough edges to leave for Phase 2/3/4 rather than fix now: no reranking/hybrid search yet (dense-only, as specced), no confidence checks on retrieval, and generation runs on Groq's fast open-weight `gpt-oss-20b` rather than a larger frontier model — worth comparing against `gpt-oss-120b` or a hosted frontier model in Phase 3 if faithfulness scores come back borderline.
 
