@@ -1,0 +1,15 @@
+# Phase 1 (plain backend) dependencies
+fastapi
+uvicorn[standard]
+streamlit
+requests
+
+qdrant-client
+sentence-transformers
+beautifulsoup4
+pymupdf
+tiktoken
+
+groq
+python-dotenv
+pydantic

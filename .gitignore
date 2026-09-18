@@ -16,6 +16,7 @@ data/raw/**/*.pdf
 # Docker / local state
 qdrant_storage/
 langfuse_data/
+qdrant_local_data/
 
 # OS / editor
 .DS_Store
