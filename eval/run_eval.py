@@ -22,6 +22,7 @@ from deepeval.metrics import (
 )
 from deepeval.test_case import LLMTestCase
 
+from app.core import config
 from app.pipelines.plain.generation import PlainGenerator
 from app.pipelines.plain.retrieval import PlainRetriever
 from eval.judge_model import GroqJudgeModel
@@ -33,7 +34,9 @@ METRIC_THRESHOLD = 0.5
 # normally lives in DeepEval's own `deepeval test run` reporting layer). Since
 # eval/results.md needs actual numbers, not just pass/fail, every run appends
 # each case's raw metric scores here so they can be aggregated afterwards.
-RAW_RESULTS_PATH = Path(__file__).parent / "eval_run_raw_results.jsonl"
+# Named per retrieval mode so concurrent/overlapping runs can't corrupt each other
+# (a real bug hit once during Phase 3 — see DECISIONS.md).
+RAW_RESULTS_PATH = Path(__file__).parent / f"eval_run_raw_results_{config.RETRIEVAL_MODE}.jsonl"
 
 
 def _load_golden_set() -> list[dict]:

@@ -17,7 +17,12 @@ from app.core.interfaces import Embedder
 from app.core.models import Chunk
 from app.pipelines.plain.chunking import chunk_text
 from app.pipelines.plain.embedding import get_embedder
-from app.pipelines.plain.vector_store import ensure_collection, get_qdrant_client
+from app.pipelines.plain.sparse_embedding import SparseEmbedder
+from app.pipelines.plain.vector_store import (
+    ensure_collection,
+    ensure_hybrid_collection,
+    get_qdrant_client,
+)
 
 # Known navigation/index pages (link lists, not article content) — see
 # data/raw/SOURCES.md. Excluded by this generic filename pattern rather than a
@@ -51,13 +56,12 @@ def _chunk_id(source_doc: str, chunk_index: int) -> str:
 class PlainIngestor:
     def __init__(self, embedder: Embedder | None = None):
         self.embedder = embedder or get_embedder()
+        self.sparse_embedder = SparseEmbedder() if config.RETRIEVAL_MODE == "hybrid" else None
         self.client = get_qdrant_client()
 
-    def ingest(self, raw_dir: Path) -> int:
-        source_files = _discover_source_files(raw_dir)
+    def _discover_and_chunk(self, raw_dir: Path) -> list[Chunk]:
         all_chunks: list[Chunk] = []
-
-        for path in source_files:
+        for path in _discover_source_files(raw_dir):
             text = _extract_text(path)
             source_doc = str(path.relative_to(raw_dir).as_posix())
             doc_type = path.relative_to(raw_dir).parts[0]
@@ -71,30 +75,50 @@ class PlainIngestor:
                         chunk_index=i,
                     )
                 )
+        return all_chunks
 
+    def ingest(self, raw_dir: Path) -> int:
+        all_chunks = self._discover_and_chunk(raw_dir)
         if not all_chunks:
             return 0
 
-        vectors = self.embedder.embed_documents([c.text for c in all_chunks])
-        ensure_collection(self.client, config.QDRANT_COLLECTION, vector_size=len(vectors[0]))
-
-        points = [
-            PointStruct(
-                id=chunk.id,
-                vector=vector,
-                payload={
-                    "text": chunk.text,
-                    "source_doc": chunk.source_doc,
-                    "doc_type": chunk.doc_type,
-                    "chunk_index": chunk.chunk_index,
-                },
-            )
-            for chunk, vector in zip(all_chunks, vectors)
+        collection = config.collection_name()
+        payloads = [
+            {
+                "text": chunk.text,
+                "source_doc": chunk.source_doc,
+                "doc_type": chunk.doc_type,
+                "chunk_index": chunk.chunk_index,
+            }
+            for chunk in all_chunks
         ]
-        self.client.upsert(collection_name=config.QDRANT_COLLECTION, points=points)
+
+        if config.RETRIEVAL_MODE == "hybrid":
+            dense_vectors = self.embedder.embed_documents([c.text for c in all_chunks])
+            sparse_vectors = self.sparse_embedder.embed_documents([c.text for c in all_chunks])
+            ensure_hybrid_collection(self.client, collection, dense_size=len(dense_vectors[0]))
+            points = [
+                PointStruct(
+                    id=chunk.id,
+                    vector={"dense": dense, "sparse": sparse},
+                    payload=payload,
+                )
+                for chunk, dense, sparse, payload in zip(
+                    all_chunks, dense_vectors, sparse_vectors, payloads
+                )
+            ]
+        else:
+            vectors = self.embedder.embed_documents([c.text for c in all_chunks])
+            ensure_collection(self.client, collection, vector_size=len(vectors[0]))
+            points = [
+                PointStruct(id=chunk.id, vector=vector, payload=payload)
+                for chunk, vector, payload in zip(all_chunks, vectors, payloads)
+            ]
+
+        self.client.upsert(collection_name=collection, points=points)
         return len(all_chunks)
 
 
 if __name__ == "__main__":
     count = PlainIngestor().ingest(Path(config.DATA_RAW_DIR))
-    print(f"Indexed {count} chunks from {config.DATA_RAW_DIR} into '{config.QDRANT_COLLECTION}'")
+    print(f"Indexed {count} chunks from {config.DATA_RAW_DIR} into '{config.collection_name()}'")

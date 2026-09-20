@@ -31,7 +31,18 @@ GENERATION_MODEL = os.environ.get("GENERATION_MODEL", "openai/gpt-oss-20b")
 CHUNK_SIZE_TOKENS = int(os.environ.get("CHUNK_SIZE_TOKENS", "500"))
 CHUNK_OVERLAP_TOKENS = int(os.environ.get("CHUNK_OVERLAP_TOKENS", "50"))
 
-# Retrieval
+# Retrieval — Phase 3 adds "hybrid" (dense + BM25 sparse, RRF fusion) as an
+# alternative to Phase 1's "dense"-only baseline. Each mode gets its own Qdrant
+# collection (different vector schemas), so switching doesn't require re-ingesting
+# whichever mode you're not currently using.
 RETRIEVAL_TOP_K = int(os.environ.get("RETRIEVAL_TOP_K", "5"))
+RETRIEVAL_MODE = os.environ.get("RETRIEVAL_MODE", "hybrid")
+HYBRID_PREFETCH_LIMIT = int(os.environ.get("HYBRID_PREFETCH_LIMIT", "20"))
+
+
+def collection_name() -> str:
+    """Each retrieval mode gets its own collection, since dense-only and hybrid
+    collections have different vector schemas."""
+    return QDRANT_COLLECTION if RETRIEVAL_MODE == "dense" else f"{QDRANT_COLLECTION}_{RETRIEVAL_MODE}"
 
 DATA_RAW_DIR = os.environ.get("DATA_RAW_DIR", "data/raw")

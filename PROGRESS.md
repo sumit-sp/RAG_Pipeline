@@ -41,4 +41,13 @@ Next: get explicit go-ahead before Phase 2 (eval harness) — Phase 1 isn't full
 
 Phase 2 exit criteria met: baseline eval numbers exist, committed, and CI is wired to run them automatically on push (untestable until a GitHub remote exists — tracked as part of the deferred deployment work).
 
-Next: get explicit go-ahead before Phase 3 (retrieval & generation quality). Phase 3's own instructions say to try one change at a time against the baseline above and keep only what moves the number — hybrid search and/or reranking should be the first things tried, aimed specifically at the cross-reference contextual-precision/recall gap.
+## Phase 3 — Retrieval & generation quality (in progress)
+
+- [x] Found and fixed a real bug while setting up before/after comparisons: `gpt-oss-20b`/`gpt-oss-120b` sometimes exhausted their token budget on hidden reasoning tokens before emitting an answer (`finish_reason="length"`, empty content). Fixed with `max_completion_tokens=4096` + `reasoning_effort="low"` on every Groq call, and `PlainGenerator` now raises instead of silently returning empty text. Details in `DECISIONS.md`.
+- [x] Discovered and documented real run-to-run scoring variance (~0.05-0.07 per metric) between identical-config re-runs — a genuine characteristic of served LLM inference at `temperature=0`, not a bug. Documented as a noise floor for reading all Phase 3/4 comparisons in `eval/results.md`.
+- [x] **Hybrid search (dense + BM25 sparse via Qdrant native support) — KEPT.** Pass rate 27/41 → 31/41 (66%→76%) against the bug-fixed dense baseline. `RETRIEVAL_MODE=hybrid` is now the default. Full numbers in `eval/results.md`.
+- [ ] Reranking — not yet tried
+- [ ] Contextual chunk headers — not yet tried
+- [ ] Chunk size / overlap tuning — not yet tried
+
+Next: continue trying Phase 3 techniques (reranking next, targeting the cross-reference recall dip hybrid search introduced), or stop here if the user wants to check in first — either way, get explicit go-ahead before Phase 4.

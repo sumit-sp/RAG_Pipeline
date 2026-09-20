@@ -35,8 +35,20 @@ class PlainGenerator:
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.0,
+            max_completion_tokens=4096,
+            reasoning_effort="low",
         )
-        text = response.choices[0].message.content
+        choice = response.choices[0]
+        text = choice.message.content
+        if not text:
+            # gpt-oss models spend part of the token budget on hidden "reasoning"
+            # tokens before the visible answer; with finish_reason="length" that
+            # budget can run out before any answer is emitted. Surface this as a
+            # visible failure instead of silently returning an empty answer.
+            raise RuntimeError(
+                f"Groq returned an empty response (finish_reason={choice.finish_reason!r}) "
+                f"for question: {question!r}"
+            )
 
         citations = sorted({c.chunk.source_doc for c in contexts})
         return Answer(text=text, citations=citations)

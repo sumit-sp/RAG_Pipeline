@@ -1,70 +1,82 @@
 # Eval results
 
-Baseline numbers for the Phase 1 walking skeleton (plain backend): naive HTML/PDF
-parsing, fixed-size chunking, local embeddings, dense-only top-k retrieval, Groq
-`gpt-oss-20b` generation. Measured against all 41 questions in `eval/golden_set.jsonl`
-via DeepEval, judged by Groq `gpt-oss-120b` (see `DECISIONS.md` for the judge-model
-trade-off). Metric threshold: 0.5 for all four metrics. Raw per-question scores are
-in `eval/eval_run_raw_results.jsonl`.
+All numbers below are against the same 41 questions in `eval/golden_set.jsonl`, via DeepEval,
+judged by Groq `gpt-oss-120b` (see `DECISIONS.md`). Metric threshold: 0.5. Raw per-question
+scores for each run are in `eval/eval_run_raw_results_<mode>.jsonl`.
 
-**Overall test result: 26/41 questions (63%) passed on all four metrics simultaneously.**
-2 of 41 questions errored before scoring (empty generation output from Groq on both —
-see "Known issues" below) and are excluded from the metric averages, which are
-computed over the 39 questions that completed.
+**Read this before trusting a decimal place:** identical-config re-runs of this suite show
+real run-to-run variance (~0.05-0.07 on individual metric means), because Groq's served LLM
+inference isn't bit-exact at `temperature=0`, and that affects both the generator and the
+judge model. See "run-to-run variance" in `DECISIONS.md`. Treat the overall pass/fail count as
+the primary signal; treat single-metric deltas smaller than ~0.07 as within the noise floor.
 
-## Baseline scores (n=39)
+## Phase 2 baseline (dense-only retrieval, original)
 
-| Metric | Threshold | Mean score | Pass rate |
+First baseline run, before a bug was found and fixed (see Phase 3 below): 26/41 passed, and
+2/41 questions crashed out of scoring entirely (empty Groq response). Superseded by the
+bug-fixed re-run below — kept here only as the historical Phase 2 record.
+
+| Metric | Mean (n=39, excl. 2 crashes) |
+|---|---|
+| Faithfulness | 0.952 |
+| Answer Relevancy | 0.977 |
+| Contextual Precision | 0.759 |
+| Contextual Recall | 0.752 |
+
+## Phase 3
+
+### Fix: empty Groq responses (finish_reason="length" on gpt-oss reasoning models)
+
+Not a retrieval/generation *quality* change, but a robustness fix required before any
+before/after comparison could be trusted — see `DECISIONS.md`. Re-running dense-only after the
+fix, all 41 questions completed (0 crashes, vs. 2/41 before):
+
+| Metric | Threshold | Mean | Pass rate |
 |---|---|---|---|
-| Faithfulness | 0.5 | **0.952** | 38/39 (97%) |
-| Answer Relevancy | 0.5 | **0.977** | 39/39 (100%) |
-| Contextual Precision | 0.5 | **0.759** | 32/39 (82%) |
-| Contextual Recall | 0.5 | **0.752** | 34/39 (87%) |
+| Faithfulness | 0.5 | 0.887 | 37/41 |
+| Answer Relevancy | 0.5 | 0.989 | 41/41 |
+| Contextual Precision | 0.5 | 0.691 | 31/41 |
+| Contextual Recall | 0.5 | 0.772 | 33/41 |
+| **Overall (all 4 pass)** | | | **27/41 (66%)** |
 
-## By difficulty
+This is the real "current best" baseline Phase 3 changes are measured against — not the
+Phase 2 numbers above, which included 2 crashed questions and predate the fix.
 
-| Difficulty | n | Faithfulness | Answer Relevancy | Contextual Precision | Contextual Recall |
-|---|---|---|---|---|---|
-| single-hop | 26 | 0.946 | 0.974 | 0.823 | 0.788 |
-| cross-reference | 8 | 0.943 | 0.972 | **0.626** | **0.542** |
-| multi-hop | 3 | 1.000 | 1.000 | 0.667 | 0.833 |
-| temporal-conflict | 2 | 1.000 | 1.000 | 0.600 | 1.000 |
+### Tried: hybrid search (dense + BM25 sparse, RRF fusion) — KEPT
 
-## Reading the baseline
+| Metric | Threshold | Mean | Pass rate | Δ vs. dense (post-fix) |
+|---|---|---|---|---|
+| Faithfulness | 0.5 | 0.931 | 39/41 | +0.044 |
+| Answer Relevancy | 0.5 | 0.917 | 38/41 | −0.072 |
+| Contextual Precision | 0.5 | 0.754 | 35/41 | +0.063 |
+| Contextual Recall | 0.5 | 0.776 | 34/41 | +0.004 |
+| **Overall (all 4 pass)** | | | **31/41 (76%)** | **+4 questions** |
 
-- **Generation is already strong.** Faithfulness (0.95) and answer relevancy (0.98) are
-  high across the board — when the pipeline retrieves *something* relevant, `gpt-oss-20b`
-  answers faithfully to it and stays on-topic. This includes both temporal-conflict
-  questions (the Digital-Omnibus-vs-original-Article-113 dates), which scored perfectly
-  on faithfulness/relevancy, consistent with the manual spot-check in `PROGRESS.md`.
-- **Retrieval is the bottleneck, and it's worst on cross-reference questions.**
-  Contextual precision/recall are meaningfully lower than faithfulness/relevancy overall
-  (0.76/0.75 vs. 0.95/0.98), and cross-reference questions — the ones requiring chunks
-  from two different documents (e.g. a Service Desk article's summary vs. the AI Act's
-  primary text, or an AI Act obligation vs. its GDPR counterpart) — score worst of all
-  (0.63 precision, 0.54 recall). This is exactly what you'd expect from dense-only
-  top-k search with no query decomposition or multi-document awareness: a single
-  embedding of the question tends to pull chunks from whichever one document is the
-  closest semantic match, not both documents a cross-reference question actually needs.
-  **This is the clearest, most specific target for Phase 3** (hybrid search and/or
-  reranking should be evaluated against cross-reference questions specifically, not
-  just the overall average).
-- Sample size caveat: 39 questions (and subsets as small as 2-8 per difficulty bucket)
-  is enough to see a real, actionable signal here, but not enough to treat any single
-  decimal place as precise — Phase 3 comparisons should look for consistent directional
-  movement, not chase noise in the third digit.
+By difficulty (contextual precision / recall, dense → hybrid):
 
-## Known issues surfaced by this baseline run
+| Difficulty | n | Precision | Recall |
+|---|---|---|---|
+| single-hop | 28 | 0.712 → 0.742 | 0.815 → 0.845 |
+| cross-reference | 8 | 0.770 → 0.826 | 0.792 → 0.667 |
+| multi-hop | 3 | 0.667 → 0.844 | 0.500 → 0.611 |
+| temporal-conflict | 2 | 0.125 → 0.500 | 0.500 → 0.500 |
 
-- **2 of 41 questions (both about the GPAI Code of Practice's Safety and Security
-  chapter) got an empty generation response from Groq** and errored out of DeepEval's
-  metrics entirely (`MissingTestCaseParamsError: 'actual_output' cannot be empty`)
-  rather than producing a low score. Not yet root-caused — candidates are a transient
-  Groq API issue or something specific to those two prompts/retrieved contexts (both
-  draw from the same PDF). Worth a manual retry and, if it recurs, hardening
-  `PlainGenerator.generate()` to handle an empty/`None` response explicitly rather than
-  silently passing it through. Left as a Phase 3+ item since Phase 2's job is measuring,
-  not fixing.
-- No reranking, no hybrid search, no query rewriting — all as specced for the Phase 1
-  baseline. The contextual precision/recall numbers above are what that gets you on
-  this corpus.
+**Kept.** The overall pass-rate swing (27→31, +4 questions) is well above the observed noise
+floor, and the mechanism makes sense: dense embeddings match on semantic topic similarity,
+which can miss exact-term hits (article numbers, defined terms) that BM25 catches directly —
+precisely what multi-hop and cross-reference questions need, since they require chunks pulled
+in by different signals from two different documents. Answer relevancy dropped somewhat
+(0.989→0.917) but stayed well clear of threshold; not treated as a regression worth reverting
+for. `RETRIEVAL_MODE=hybrid` is now the default (see `DECISIONS.md`).
+
+Cross-reference recall (0.792→0.667) went the "wrong" way despite precision improving a lot —
+plausible explanation: RRF fusion's ranking can promote a highly BM25-relevant chunk ahead of
+an equally-needed second chunk that only the dense signal was finding, effectively trading
+recall for precision within a fixed top-k. Worth revisiting if reranking (tried next) doesn't
+also fix it.
+
+### Not yet tried
+
+- Reranking (cross-encoder over hybrid's top-N)
+- Contextual chunk headers
+- Chunk size / overlap tuning

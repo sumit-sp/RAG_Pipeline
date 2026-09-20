@@ -5,6 +5,7 @@ streamlit
 requests
 
 qdrant-client
+fastembed
 sentence-transformers
 beautifulsoup4
 pymupdf

@@ -31,16 +31,20 @@ class GroqJudgeModel(DeepEvalBaseLLM):
             model=self.model_name,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.0,
+            max_completion_tokens=4096,
+            reasoning_effort="low",
         )
-        return response.choices[0].message.content
+        return response.choices[0].message.content or ""
 
     async def a_generate(self, prompt: str) -> str:
         response = await self.async_client.chat.completions.create(
             model=self.model_name,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.0,
+            max_completion_tokens=4096,
+            reasoning_effort="low",
         )
-        return response.choices[0].message.content
+        return response.choices[0].message.content or ""
 
     def get_model_name(self) -> str:
         return self.model_name
