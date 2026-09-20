@@ -28,3 +28,12 @@ Phase 0 exit criteria met: repo scaffolded, all 8 documents in place under `data
 Known rough edges to leave for Phase 2/3/4 rather than fix now: no reranking/hybrid search yet (dense-only, as specced), no confidence checks on retrieval, and generation runs on Groq's fast open-weight `gpt-oss-20b` rather than a larger frontier model — worth comparing against `gpt-oss-120b` or a hosted frontier model in Phase 3 if faithfulness scores come back borderline.
 
 Next: get explicit go-ahead before Phase 2 (eval harness) — Phase 1 isn't fully closed out until deployment happens or is explicitly deferred.
+
+## Phase 2 — Eval harness (in progress)
+
+- [x] Golden set drafted (43 candidates: 6 hand-verified by Claude directly against primary source text — the Digital Omnibus amendment vs. original AI Act Article 113 — plus 37 agent-drafted from the rest of the corpus) and reviewed by the user. **User rejected 2 (candidates #29 and #32 in the review doc — GPAI scope guidelines designation-timing inference, and the draft Code of Practice status question)**, approved the remaining 41. Final set: `eval/golden_set.jsonl`, 41 questions.
+- [x] `eval/judge_model.py` — custom DeepEval model wrapping Groq `gpt-oss-120b` as judge (see DECISIONS.md for the self-grading-bias trade-off)
+- [x] `eval/run_eval.py` — pytest + `assert_test()` against faithfulness/answer relevancy/contextual precision/contextual recall, threshold 0.5, run live against the plain-backend pipeline per question
+- [x] `.github/workflows/eval.yml` — runs `deepeval test run` on push (untested until there's a GitHub remote; local runs use plain `pytest` instead — see below)
+- [ ] Baseline numbers in `eval/results.md` — not yet run against the full 41-question set
+- Known local-environment quirk: `deepeval test run` hangs indefinitely on this network (looks like a blocked telemetry/version-check call). Plain `pytest eval/run_eval.py` runs the identical suite without hanging — used for all local runs. CI keeps `deepeval test run` since GitHub Actions runs on a different network.

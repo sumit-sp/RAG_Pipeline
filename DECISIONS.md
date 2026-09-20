@@ -1,5 +1,11 @@
 # Decisions log
 
+## Phase 2
+
+### DeepEval judge model: Groq gpt-oss-120b, not OpenAI's default
+DeepEval's built-in metrics (faithfulness, answer relevancy, contextual precision/recall) default to an OpenAI model as judge, which needs a key we don't have. Rather than default to that or reuse the same model that generates answers (gpt-oss-20b — self-grading bias, a known LLM-as-judge pitfall), used the larger `gpt-oss-120b` via the existing Groq key as an independent judge, via a small custom `DeepEvalBaseLLM` wrapper (`eval/judge_model.py`).
+**Trade-off accepted:** both generator and judge are still GPT-OSS-family models from the same lab, so some correlated bias risk remains — a truly independent frontier judge (e.g. Claude or GPT-4o) would be stronger, but wasn't available without procuring another API key. Noted here so eval numbers are read with that caveat, not treated as bulletproof.
+
 A running record of non-trivial decisions, including rejected alternatives and negative results, logged as they're made (not retroactively).
 
 ## Phase 0

@@ -25,3 +25,6 @@ qdrant_local_data/
 
 # Logs
 *.log
+
+# DeepEval local run cache
+.deepeval/

@@ -1,0 +1,30 @@
+name: Eval suite
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Ingest corpus into local Qdrant
+        run: python -m app.pipelines.plain.ingestion
+        env:
+          EMBEDDING_BACKEND: local
+
+      - name: Run eval suite
+        run: deepeval test run eval/run_eval.py
+        env:
+          EMBEDDING_BACKEND: local
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GENERATION_MODEL: openai/gpt-oss-20b

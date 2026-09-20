@@ -13,3 +13,6 @@ tiktoken
 groq
 python-dotenv
 pydantic
+
+deepeval
+pytest
