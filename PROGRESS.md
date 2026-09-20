@@ -46,8 +46,10 @@ Phase 2 exit criteria met: baseline eval numbers exist, committed, and CI is wir
 - [x] Found and fixed a real bug while setting up before/after comparisons: `gpt-oss-20b`/`gpt-oss-120b` sometimes exhausted their token budget on hidden reasoning tokens before emitting an answer (`finish_reason="length"`, empty content). Fixed with `max_completion_tokens=4096` + `reasoning_effort="low"` on every Groq call, and `PlainGenerator` now raises instead of silently returning empty text. Details in `DECISIONS.md`.
 - [x] Discovered and documented real run-to-run scoring variance (~0.05-0.07 per metric) between identical-config re-runs — a genuine characteristic of served LLM inference at `temperature=0`, not a bug. Documented as a noise floor for reading all Phase 3/4 comparisons in `eval/results.md`.
 - [x] **Hybrid search (dense + BM25 sparse via Qdrant native support) — KEPT.** Pass rate 27/41 → 31/41 (66%→76%) against the bug-fixed dense baseline. `RETRIEVAL_MODE=hybrid` is now the default. Full numbers in `eval/results.md`.
-- [ ] Reranking — not yet tried
+- [x] **Reranking (cross-encoder on top of hybrid) — TRIED AND REVERTED.** Overall pass rate went 31/41 → 26/41 despite 2 of 4 metrics improving on average — the metrics that got worse (precision, multi-hop specifically) knocked out different questions than before. `USE_RERANKING` defaults to `false`; code kept, not deleted. Full write-up in `eval/results.md` and `DECISIONS.md`. This is the phase's documented negative result.
 - [ ] Contextual chunk headers — not yet tried
 - [ ] Chunk size / overlap tuning — not yet tried
 
-Next: continue trying Phase 3 techniques (reranking next, targeting the cross-reference recall dip hybrid search introduced), or stop here if the user wants to check in first — either way, get explicit go-ahead before Phase 4.
+Phase 3 exit criteria met: eval numbers meaningfully improved over the Phase 2 baseline (27/41 → 31/41 via hybrid search), a results table exists, and a negative result is documented (reranking).
+
+Next: get explicit go-ahead before continuing further Phase 3 experiments (contextual chunk headers, chunk-size tuning) or moving to Phase 4.

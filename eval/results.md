@@ -75,8 +75,35 @@ an equally-needed second chunk that only the dense signal was finding, effective
 recall for precision within a fixed top-k. Worth revisiting if reranking (tried next) doesn't
 also fix it.
 
+### Tried: cross-encoder reranking on top of hybrid search — REVERTED
+
+| Metric | Hybrid (current best) | +Reranking | Δ |
+|---|---|---|---|
+| Faithfulness | 0.931 | 0.935 | +0.004 |
+| Answer Relevancy | 0.917 | 0.984 | +0.067 |
+| Contextual Precision | 0.754 | 0.718 | −0.036 |
+| Contextual Recall | 0.776 | 0.809 | +0.033 |
+| **Overall (all 4 pass)** | **31/41 (76%)** | **26/41 (63%)** | **−5 questions** |
+
+By difficulty (precision / recall, hybrid → +reranking):
+
+| Difficulty | n | Precision | Recall |
+|---|---|---|---|
+| single-hop | 28 | 0.742 → 0.685 | 0.845 → 0.851 |
+| cross-reference | 8 | 0.826 → 0.878 | 0.667 → 0.792 |
+| multi-hop | 3 | 0.844 → 0.602 | 0.611 → 0.500 |
+| temporal-conflict | 2 | 0.500 → 0.725 | 0.500 → 0.750 |
+
+**Reverted.** Even though 2 of 4 metrics improved and two difficulty buckets got better, the
+overall pass count dropped by 5 questions — a swing well past the noise floor — because the
+metrics that got worse (precision, and multi-hop specifically) knocked out questions that
+weren't failing before. `cross-encoder/ms-marco-MiniLM-L-6-v2` is trained on general web
+passage ranking, not legal/regulatory text; it appears to work against the hybrid retrieval's
+exact-term (BM25) signal rather than refine it, especially where a question needs two specific
+documents together (multi-hop). `USE_RERANKING` defaults to `false`; code kept for a possible
+future attempt with a different reranker. See `DECISIONS.md`.
+
 ### Not yet tried
 
-- Reranking (cross-encoder over hybrid's top-N)
 - Contextual chunk headers
 - Chunk size / overlap tuning

@@ -7,6 +7,7 @@ from app.core import config
 from app.core.interfaces import Embedder
 from app.core.models import Chunk, RetrievedContext
 from app.pipelines.plain.embedding import get_embedder
+from app.pipelines.plain.reranking import Reranker
 from app.pipelines.plain.sparse_embedding import SparseEmbedder
 from app.pipelines.plain.vector_store import get_qdrant_client
 
@@ -28,9 +29,10 @@ class PlainRetriever:
     def __init__(self, embedder: Embedder | None = None):
         self.embedder = embedder or get_embedder()
         self.sparse_embedder = SparseEmbedder() if config.RETRIEVAL_MODE == "hybrid" else None
+        self.reranker = Reranker() if config.USE_RERANKING else None
         self.client = get_qdrant_client()
 
-    def retrieve(self, query: str, top_k: int = config.RETRIEVAL_TOP_K) -> list[RetrievedContext]:
+    def _search(self, query: str, limit: int) -> list[RetrievedContext]:
         collection = config.collection_name()
 
         if config.RETRIEVAL_MODE == "hybrid":
@@ -47,14 +49,21 @@ class PlainRetriever:
                     ),
                 ],
                 query=FusionQuery(fusion="rrf"),
-                limit=top_k,
+                limit=limit,
             ).points
         else:
             query_vector = self.embedder.embed_query(query)
             results = self.client.query_points(
                 collection_name=collection,
                 query=query_vector,
-                limit=top_k,
+                limit=limit,
             ).points
 
         return [_to_context(point) for point in results]
+
+    def retrieve(self, query: str, top_k: int = config.RETRIEVAL_TOP_K) -> list[RetrievedContext]:
+        if self.reranker is None:
+            return self._search(query, limit=top_k)
+
+        candidates = self._search(query, limit=config.RERANK_CANDIDATE_LIMIT)
+        return self.reranker.rerank(query, candidates, top_k=top_k)

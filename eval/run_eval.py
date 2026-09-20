@@ -34,9 +34,10 @@ METRIC_THRESHOLD = 0.5
 # normally lives in DeepEval's own `deepeval test run` reporting layer). Since
 # eval/results.md needs actual numbers, not just pass/fail, every run appends
 # each case's raw metric scores here so they can be aggregated afterwards.
-# Named per retrieval mode so concurrent/overlapping runs can't corrupt each other
-# (a real bug hit once during Phase 3 — see DECISIONS.md).
-RAW_RESULTS_PATH = Path(__file__).parent / f"eval_run_raw_results_{config.RETRIEVAL_MODE}.jsonl"
+# Named per retrieval config so concurrent/overlapping runs can't corrupt each
+# other (a real bug hit twice during Phase 3 — see DECISIONS.md).
+_RUN_LABEL = config.RETRIEVAL_MODE + ("_rerank" if config.USE_RERANKING else "")
+RAW_RESULTS_PATH = Path(__file__).parent / f"eval_run_raw_results_{_RUN_LABEL}.jsonl"
 
 
 def _load_golden_set() -> list[dict]:

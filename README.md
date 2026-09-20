@@ -108,6 +108,8 @@ All config is via environment variables (see `.env.example`). Key ones:
 | `PIPELINE_BACKEND` | `plain` | Only `plain` is implemented so far (Phase 6 adds `langchain`) |
 | `QDRANT_URL` | *(unset)* | Set this to use a real Qdrant server (e.g. via `docker-compose.yml`) instead of embedded/on-disk mode |
 | `QDRANT_PATH` | `./qdrant_local_data` | Used only when `QDRANT_URL` is unset |
+| `RETRIEVAL_MODE` | `hybrid` | `dense` (Phase 1 baseline) or `hybrid` (dense + BM25 sparse, current best — see `eval/results.md`). Each mode ingests into its own Qdrant collection. |
+| `USE_RERANKING` | `false` | Cross-encoder reranking on top of whichever `RETRIEVAL_MODE` is active. Tried and reverted (see `DECISIONS.md`) — left available but off by default. |
 
 ## Running the eval suite
 
@@ -153,21 +155,25 @@ Once pushed to GitHub, add `GROQ_API_KEY` as a repository secret (Settings → S
 
 ## Results so far
 
-Baseline eval (Phase 2, plain backend, no retrieval/generation tuning yet — full detail in `eval/results.md`):
+Current best (Phase 3, hybrid retrieval — dense + BM25 sparse, RRF fusion): **31/41 golden-set questions (76%) pass all four DeepEval metrics simultaneously.** Full history, by-difficulty breakdowns, and the reasoning behind each kept/reverted change are in `eval/results.md` and `DECISIONS.md`.
 
 | Metric | Mean score | Pass rate (threshold 0.5) |
 |---|---|---|
-| Faithfulness | 0.952 | 97% |
-| Answer Relevancy | 0.977 | 100% |
-| Contextual Precision | 0.759 | 82% |
-| Contextual Recall | 0.752 | 87% |
+| Faithfulness | 0.931 | 95% |
+| Answer Relevancy | 0.917 | 93% |
+| Contextual Precision | 0.754 | 85% |
+| Contextual Recall | 0.776 | 83% |
 
-26/41 golden-set questions (63%) pass all four metrics simultaneously. Generation quality is already strong; retrieval — specifically on cross-reference questions that need chunks from two different documents at once (0.63 precision / 0.54 recall vs. 0.82/0.79 for single-hop) — is the clear bottleneck and the concrete target for Phase 3 (hybrid search, reranking).
+Note: identical-config re-runs of this suite show real run-to-run variance (~0.05-0.07 per metric, since served LLM inference isn't bit-exact even at `temperature=0`) — see `eval/results.md` before reading too much into any single decimal place. The overall pass/fail count is the more robust signal.
+
+**What's been tried:**
+- ✅ **Kept:** hybrid search (dense + BM25). Pass rate 27/41 → 31/41 vs. dense-only. Dense embeddings miss exact-term matches (article numbers, defined terms) that BM25 catches, which particularly helps multi-hop and cross-reference questions.
+- ❌ **Reverted:** cross-encoder reranking on top of hybrid. Pass rate dropped to 26/41 despite 2 of 4 metrics improving on average — a genuine regression, not just noise. `cross-encoder/ms-marco-MiniLM-L-6-v2` (general web passage ranking) appears to work against the hybrid retrieval's exact-term signal rather than refine it.
 
 ## Known limitations / failure modes
 
-- **Cross-document retrieval is weak.** Dense-only top-k search tends to pull chunks from whichever single document is the closest semantic match, so questions needing two documents at once (e.g. an AI Act obligation and its GDPR counterpart) score worse on contextual precision/recall than single-hop questions. See `eval/results.md`.
-- **2 of 41 eval questions get an empty generation response from Groq** (both about the GPAI Safety & Security Code of Practice chapter) and error out of scoring rather than just scoring low. Not yet root-caused; `PlainGenerator` doesn't currently handle an empty/`None` LLM response explicitly.
-- No reranking, hybrid search, or query rewriting yet (Phase 1/2 baseline, as specced).
+- **Multi-hop/cross-document retrieval is still the weakest area**, even after hybrid search meaningfully improved it. Questions needing chunks from two different documents at once (e.g. an AI Act obligation and its GDPR counterpart) remain harder than single-hop questions.
+- **Found and fixed:** `gpt-oss` models occasionally exhausted their token budget on hidden reasoning tokens before emitting any answer (`finish_reason="length"`, empty content) — fixed with `max_completion_tokens=4096` + `reasoning_effort="low"` on every Groq call.
+- No contextual chunk headers or chunk-size tuning tried yet.
 - No prompt-injection defense yet (Phase 5 deliverable).
 - This section will keep growing as Phase 3/4 surface more, and gets finalized in Phase 5.

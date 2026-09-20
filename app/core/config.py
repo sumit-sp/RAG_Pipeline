@@ -39,6 +39,11 @@ RETRIEVAL_TOP_K = int(os.environ.get("RETRIEVAL_TOP_K", "5"))
 RETRIEVAL_MODE = os.environ.get("RETRIEVAL_MODE", "hybrid")
 HYBRID_PREFETCH_LIMIT = int(os.environ.get("HYBRID_PREFETCH_LIMIT", "20"))
 
+# Reranking is an orthogonal post-processing step over whichever RETRIEVAL_MODE is
+# active: fetch a wider candidate set, rerank with a cross-encoder, keep the top-k.
+USE_RERANKING = os.environ.get("USE_RERANKING", "false").lower() == "true"
+RERANK_CANDIDATE_LIMIT = int(os.environ.get("RERANK_CANDIDATE_LIMIT", "20"))
+
 
 def collection_name() -> str:
     """Each retrieval mode gets its own collection, since dense-only and hybrid
