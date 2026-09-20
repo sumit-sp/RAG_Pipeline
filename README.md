@@ -155,16 +155,21 @@ Once pushed to GitHub, add `GROQ_API_KEY` as a repository secret (Settings → S
 
 ## Results so far
 
-Current best (Phase 3, hybrid retrieval — dense + BM25 sparse, RRF fusion): **31/41 golden-set questions (76%) pass all four DeepEval metrics simultaneously.** Full history, by-difficulty breakdowns, and the reasoning behind each kept/reverted change are in `eval/results.md` and `DECISIONS.md`.
+Current best (Phase 3, hybrid retrieval — dense + BM25 sparse, RRF fusion), measured across
+component/pipeline/application-level checks: **24/41 golden-set questions (59%) pass all six
+checks simultaneously.** Full history, by-difficulty breakdowns, and the reasoning behind each
+kept/reverted change are in `eval/results.md` and `DECISIONS.md`.
 
-| Metric | Mean score | Pass rate (threshold 0.5) |
-|---|---|---|
-| Faithfulness | 0.931 | 95% |
-| Answer Relevancy | 0.917 | 93% |
-| Contextual Precision | 0.754 | 85% |
-| Contextual Recall | 0.776 | 83% |
+| Check | Level | Mean / rate | Pass rate |
+|---|---|---|---|
+| Retrieval hit (expected doc retrieved) | Component (retriever), reference-based | 80% | 33/41 |
+| Faithfulness | Pipeline, LLM-judge | 0.951 | 95% |
+| Answer Relevancy | Pipeline, LLM-judge | 0.947 | 98% |
+| Contextual Precision | Pipeline, LLM-judge | 0.772 | 85% |
+| Contextual Recall | Pipeline, LLM-judge | 0.821 | 83% |
+| Answer Correctness (vs. golden answer) | Application, LLM-judge | 0.751 | 80% |
 
-Note: identical-config re-runs of this suite show real run-to-run variance (~0.05-0.07 per metric, since served LLM inference isn't bit-exact even at `temperature=0`) — see `eval/results.md` before reading too much into any single decimal place. The overall pass/fail count is the more robust signal.
+Note: identical-config re-runs of this suite show real run-to-run variance (~0.05-0.07 per metric, since served LLM inference isn't bit-exact even at `temperature=0`) — see `eval/results.md` before reading too much into any single decimal place. The overall pass/fail count is the more robust signal. Also note: 59% here isn't a quality drop from an earlier-reported 76% — that number used only the 4 pipeline-level metrics; adding the retrieval-hit and answer-correctness checks measures the same pipeline more completely, not a worse one.
 
 **What's been tried:**
 - ✅ **Kept:** hybrid search (dense + BM25). Pass rate 27/41 → 31/41 vs. dense-only. Dense embeddings miss exact-term matches (article numbers, defined terms) that BM25 catches, which particularly helps multi-hop and cross-reference questions.
@@ -173,6 +178,7 @@ Note: identical-config re-runs of this suite show real run-to-run variance (~0.0
 ## Known limitations / failure modes
 
 - **Multi-hop/cross-document retrieval is still the weakest area**, even after hybrid search meaningfully improved it. Questions needing chunks from two different documents at once (e.g. an AI Act obligation and its GDPR counterpart) remain harder than single-hop questions.
+- **Retrieval sometimes finds a "good enough" chunk instead of the specific expected one** — a reference-based check found the literal expected source document missing from top-k on 8/41 questions (20%), even though several of those still scored acceptably on LLM-judged contextual metrics because a different, topically-similar chunk covered the same ground. Worth targeting directly in Phase 4 (e.g. cross-reference metadata linking related chunks across documents).
 - **Found and fixed:** `gpt-oss` models occasionally exhausted their token budget on hidden reasoning tokens before emitting any answer (`finish_reason="length"`, empty content) — fixed with `max_completion_tokens=4096` + `reasoning_effort="low"` on every Groq call.
 - No contextual chunk headers or chunk-size tuning tried yet.
 - No prompt-injection defense yet (Phase 5 deliverable).

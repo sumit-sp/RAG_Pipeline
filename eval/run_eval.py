@@ -19,8 +19,9 @@ from deepeval.metrics import (
     ContextualPrecisionMetric,
     ContextualRecallMetric,
     FaithfulnessMetric,
+    GEval,
 )
-from deepeval.test_case import LLMTestCase
+from deepeval.test_case import LLMTestCase, SingleTurnParams
 
 from app.core import config
 from app.pipelines.plain.generation import PlainGenerator
@@ -53,22 +54,44 @@ _retriever = PlainRetriever()
 _generator = PlainGenerator()
 
 
-def _run_pipeline(item: dict) -> LLMTestCase:
-    contexts = _retriever.retrieve(item["question"])
-    answer = _generator.generate(item["question"], contexts)
-    return LLMTestCase(
-        input=item["question"],
-        actual_output=answer.text,
-        expected_output=item["expected_answer"],
-        retrieval_context=[c.chunk.text for c in contexts],
-    )
+def _retrieval_hit(item: dict, contexts: list) -> bool:
+    """Component-level retriever check (reference-based, programmatic — no LLM
+    judge needed): did the expected source document actually come back in top-k?
+    Independent of the pipeline-level LLM-judged metrics below, which can look
+    fine even when retrieval missed the "right" document, as long as generation
+    stayed faithful to whatever it did retrieve instead."""
+    retrieved_docs = {c.chunk.source_doc for c in contexts}
+    return item["expected_source_doc"] in retrieved_docs
 
 
-def _append_raw_result(question: str, difficulty: str, metrics: list) -> None:
+# Application-level: does the actual answer match the golden answer, not just "is
+# it faithful to whatever was retrieved" (Faithfulness) or "is it on-topic"
+# (Answer Relevancy) — neither of those checks correctness against expected_answer.
+_answer_correctness = GEval(
+    name="Answer Correctness",
+    evaluation_params=[
+        SingleTurnParams.INPUT,
+        SingleTurnParams.ACTUAL_OUTPUT,
+        SingleTurnParams.EXPECTED_OUTPUT,
+    ],
+    criteria=(
+        "Determine whether 'actual output' is factually correct and consistent with "
+        "'expected output', given the question in 'input'. The core facts (dates, "
+        "obligations, article/section numbers, yes/no answers) must match. Extra "
+        "correct detail, different phrasing, or a different level of verbosity are "
+        "fine and should not be penalized."
+    ),
+    threshold=METRIC_THRESHOLD,
+    model=_judge,
+)
+
+
+def _append_raw_result(question: str, difficulty: str, metrics: list, retrieval_hit: bool) -> None:
     record = {
         "question": question,
         "difficulty": difficulty,
         "scores": {m.__name__: m.score for m in metrics},
+        "retrieval_hit": retrieval_hit,
     }
     with RAW_RESULTS_PATH.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record) + "\n")
@@ -78,14 +101,27 @@ def _append_raw_result(question: str, difficulty: str, metrics: list) -> None:
     "item", _golden_set, ids=[item["question"][:60] for item in _golden_set]
 )
 def test_rag_pipeline(item):
-    test_case = _run_pipeline(item)
+    contexts = _retriever.retrieve(item["question"])
+    answer = _generator.generate(item["question"], contexts)
+    test_case = LLMTestCase(
+        input=item["question"],
+        actual_output=answer.text,
+        expected_output=item["expected_answer"],
+        retrieval_context=[c.chunk.text for c in contexts],
+    )
+
+    hit = _retrieval_hit(item, contexts)
+
     metrics = [
         FaithfulnessMetric(threshold=METRIC_THRESHOLD, model=_judge),
         AnswerRelevancyMetric(threshold=METRIC_THRESHOLD, model=_judge),
         ContextualPrecisionMetric(threshold=METRIC_THRESHOLD, model=_judge),
         ContextualRecallMetric(threshold=METRIC_THRESHOLD, model=_judge),
+        _answer_correctness,
     ]
     for metric in metrics:
         metric.measure(test_case)
-    _append_raw_result(item["question"], item["difficulty"], metrics)
+    _append_raw_result(item["question"], item["difficulty"], metrics, hit)
+
+    assert hit, f"Expected source doc {item['expected_source_doc']!r} was not retrieved (component-level retriever check)"
     assert_test(test_case, metrics)

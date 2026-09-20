@@ -52,4 +52,6 @@ Phase 2 exit criteria met: baseline eval numbers exist, committed, and CI is wir
 
 Phase 3 exit criteria met: eval numbers meaningfully improved over the Phase 2 baseline (27/41 → 31/41 via hybrid search), a results table exists, and a negative result is documented (reranking).
 
+- [x] **Eval harness extended** with a component-level retrieval-hit check (reference-based, programmatic) and an application-level Answer Correctness check (GEval vs. golden answer) — prompted by checking the suite against a standard component/pipeline/application RAG-eval framework and finding it only covered the pipeline level. Retrieval-hit rate: 80% (33/41) — lower than the LLM-judged contextual metrics suggested, since those can score well even when a different-than-expected chunk covers the same ground. Combined pass rate across all 6 checks: **24/41 (59%)**, now the reference point for future comparisons (not the earlier 31/41, which used a narrower 4-check definition). Full write-up in `eval/results.md` and `DECISIONS.md`.
+
 Next: get explicit go-ahead before continuing further Phase 3 experiments (contextual chunk headers, chunk-size tuning) or moving to Phase 4.

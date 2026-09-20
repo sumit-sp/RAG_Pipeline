@@ -103,6 +103,43 @@ exact-term (BM25) signal rather than refine it, especially where a question need
 documents together (multi-hop). `USE_RERANKING` defaults to `false`; code kept for a possible
 future attempt with a different reranker. See `DECISIONS.md`.
 
+### Eval harness extended: component-level retrieval check + application-level answer correctness
+
+Prompted by reviewing the eval suite against a standard "component / pipeline / application"
+RAG-eval framework: the suite only had pipeline-level metrics (faithfulness, answer relevancy,
+contextual precision/recall — all of which judge the answer *relative to whatever was
+retrieved*, or the context *relative to the golden answer*). Nothing checked (a) whether
+retrieval actually found the specific expected source document, independent of whether the
+LLM judge liked the result, or (b) whether the final answer was simply *correct* against the
+golden answer. Added both, re-run against the current best config (hybrid, no reranking):
+
+| Check | Level | Type | Result |
+|---|---|---|---|
+| Retrieval hit (`expected_source_doc` in top-k) | Component (retriever) | Programmatic, reference-based | **33/41 (80%)** |
+| Answer Correctness (GEval vs. golden answer) | Application | LLM-judge | mean **0.751**, 33/41 pass |
+| Faithfulness | Pipeline | LLM-judge | mean 0.951, 39/41 pass |
+| Answer Relevancy | Pipeline | LLM-judge | mean 0.947, 40/41 pass |
+| Contextual Precision | Pipeline | LLM-judge | mean 0.772, 35/41 pass |
+| Contextual Recall | Pipeline | LLM-judge | mean 0.821, 34/41 pass |
+| **All 6 checks pass simultaneously** | | | **24/41 (59%)** |
+
+**This 59% isn't a quality regression from the 76% reported above** — it's the same pipeline,
+measured more completely. Two stricter, previously-invisible checks were added, so some
+questions that looked fine under the original 4 pipeline metrics are now correctly flagged as
+not-quite-right by the new ones.
+
+The retrieval-hit check in particular caught something the LLM-judged metrics were masking:
+8 questions don't retrieve the literal expected source document, even though several of them
+still scored well on contextual precision/recall — because a *different* chunk happened to
+contain equivalent information, which is enough to satisfy an LLM judge but not a reference-based
+check. The misses skew toward exactly the categories already flagged as weak: cross-reference
+and multi-hop questions, plus a cluster of Digital-Omnibus-related single-hop questions (the
+Omnibus amendment text and the original Article 113 text are both plausible sources for a
+similar-sounding date, so retrieval sometimes grabs the "wrong" but topically-similar one).
+
+**Going forward, 24/41 (all 6 checks) is the reference point** for any further Phase 3/4
+changes — not the 31/41 figure above, which used a narrower 4-check definition.
+
 ### Not yet tried
 
 - Contextual chunk headers
