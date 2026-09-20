@@ -35,5 +35,10 @@ Next: get explicit go-ahead before Phase 2 (eval harness) — Phase 1 isn't full
 - [x] `eval/judge_model.py` — custom DeepEval model wrapping Groq `gpt-oss-120b` as judge (see DECISIONS.md for the self-grading-bias trade-off)
 - [x] `eval/run_eval.py` — pytest + `assert_test()` against faithfulness/answer relevancy/contextual precision/contextual recall, threshold 0.5, run live against the plain-backend pipeline per question
 - [x] `.github/workflows/eval.yml` — runs `deepeval test run` on push (untested until there's a GitHub remote; local runs use plain `pytest` instead — see below)
-- [ ] Baseline numbers in `eval/results.md` — not yet run against the full 41-question set
+- [x] Baseline numbers in `eval/results.md` — **26/41 (63%) pass all four metrics simultaneously.** Faithfulness 0.95 and answer relevancy 0.98 are strong; contextual precision 0.76 and recall 0.75 are the bottleneck, worst specifically on cross-reference questions (0.63/0.54) — dense-only retrieval struggles to pull chunks from two different documents at once. This is the concrete target for Phase 3. Raw per-question scores in `eval/eval_run_raw_results.jsonl`.
+- [x] Found and logged: 2/41 questions (both about the GPAI Safety & Security Code of Practice chapter) got an empty Groq generation response and errored out of scoring entirely rather than just scoring low — not yet root-caused, noted in `eval/results.md` as a Phase 3+ robustness item (handle empty/`None` LLM responses explicitly).
 - Known local-environment quirk: `deepeval test run` hangs indefinitely on this network (looks like a blocked telemetry/version-check call). Plain `pytest eval/run_eval.py` runs the identical suite without hanging — used for all local runs. CI keeps `deepeval test run` since GitHub Actions runs on a different network.
+
+Phase 2 exit criteria met: baseline eval numbers exist, committed, and CI is wired to run them automatically on push (untestable until a GitHub remote exists — tracked as part of the deferred deployment work).
+
+Next: get explicit go-ahead before Phase 3 (retrieval & generation quality). Phase 3's own instructions say to try one change at a time against the baseline above and keep only what moves the number — hybrid search and/or reranking should be the first things tried, aimed specifically at the cross-reference contextual-precision/recall gap.

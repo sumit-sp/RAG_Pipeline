@@ -29,6 +29,12 @@ from eval.judge_model import GroqJudgeModel
 GOLDEN_SET_PATH = Path(__file__).parent / "golden_set.jsonl"
 METRIC_THRESHOLD = 0.5
 
+# assert_test doesn't expose per-case scores when run via plain pytest (that data
+# normally lives in DeepEval's own `deepeval test run` reporting layer). Since
+# eval/results.md needs actual numbers, not just pass/fail, every run appends
+# each case's raw metric scores here so they can be aggregated afterwards.
+RAW_RESULTS_PATH = Path(__file__).parent / "eval_run_raw_results.jsonl"
+
 
 def _load_golden_set() -> list[dict]:
     if not GOLDEN_SET_PATH.exists():
@@ -54,17 +60,28 @@ def _run_pipeline(item: dict) -> LLMTestCase:
     )
 
 
+def _append_raw_result(question: str, difficulty: str, metrics: list) -> None:
+    record = {
+        "question": question,
+        "difficulty": difficulty,
+        "scores": {m.__name__: m.score for m in metrics},
+    }
+    with RAW_RESULTS_PATH.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(record) + "\n")
+
+
 @pytest.mark.parametrize(
     "item", _golden_set, ids=[item["question"][:60] for item in _golden_set]
 )
 def test_rag_pipeline(item):
     test_case = _run_pipeline(item)
-    assert_test(
-        test_case,
-        [
-            FaithfulnessMetric(threshold=METRIC_THRESHOLD, model=_judge),
-            AnswerRelevancyMetric(threshold=METRIC_THRESHOLD, model=_judge),
-            ContextualPrecisionMetric(threshold=METRIC_THRESHOLD, model=_judge),
-            ContextualRecallMetric(threshold=METRIC_THRESHOLD, model=_judge),
-        ],
-    )
+    metrics = [
+        FaithfulnessMetric(threshold=METRIC_THRESHOLD, model=_judge),
+        AnswerRelevancyMetric(threshold=METRIC_THRESHOLD, model=_judge),
+        ContextualPrecisionMetric(threshold=METRIC_THRESHOLD, model=_judge),
+        ContextualRecallMetric(threshold=METRIC_THRESHOLD, model=_judge),
+    ]
+    for metric in metrics:
+        metric.measure(test_case)
+    _append_raw_result(item["question"], item["difficulty"], metrics)
+    assert_test(test_case, metrics)

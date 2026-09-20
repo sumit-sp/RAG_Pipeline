@@ -1,5 +1,9 @@
 # Decisions log
 
+### README kept live throughout, not deferred to Phase 5
+The spec's own plan defers the full README (architecture diagram, results table, how-to-run, known limitations) to Phase 5. The user explicitly asked for it to be updated continuously instead, wanting a complete, runnable local setup plus deployment guidance documented before deployment happens, not written retroactively at the end.
+**How to apply:** README gets updated at the end of each phase from here on with current architecture, setup steps, config, and results — Phase 5 becomes "finalize" (polish + failure-modes writeup) rather than "write from scratch."
+
 ## Phase 2
 
 ### DeepEval judge model: Groq gpt-oss-120b, not OpenAI's default
