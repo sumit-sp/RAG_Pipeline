@@ -27,9 +27,11 @@ LOCAL_EMBEDDING_MODEL = os.environ.get("LOCAL_EMBEDDING_MODEL", "BAAI/bge-small-
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 GENERATION_MODEL = os.environ.get("GENERATION_MODEL", "openai/gpt-oss-20b")
 
-# Chunking (Phase 1: fixed-size, no cleverness)
+# Chunking. "fixed" is the Phase 1 baseline (naive token window). "recursive" is a
+# Phase 3 chunk-size-tuning candidate that prefers natural text boundaries.
 CHUNK_SIZE_TOKENS = int(os.environ.get("CHUNK_SIZE_TOKENS", "500"))
 CHUNK_OVERLAP_TOKENS = int(os.environ.get("CHUNK_OVERLAP_TOKENS", "50"))
+CHUNKING_STRATEGY = os.environ.get("CHUNKING_STRATEGY", "fixed")
 
 # Retrieval — Phase 3 adds "hybrid" (dense + BM25 sparse, RRF fusion) as an
 # alternative to Phase 1's "dense"-only baseline. Each mode gets its own Qdrant

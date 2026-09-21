@@ -15,7 +15,7 @@ from qdrant_client.models import PointStruct
 from app.core import config
 from app.core.interfaces import Embedder
 from app.core.models import Chunk
-from app.pipelines.plain.chunking import chunk_text
+from app.pipelines.plain.chunking import chunk_text, recursive_chunk_text
 from app.pipelines.plain.embedding import get_embedder
 from app.pipelines.plain.sparse_embedding import SparseEmbedder
 from app.pipelines.plain.vector_store import (
@@ -53,6 +53,10 @@ def _chunk_id(source_doc: str, chunk_index: int) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{source_doc}#{chunk_index}"))
 
 
+def _chunker():
+    return recursive_chunk_text if config.CHUNKING_STRATEGY == "recursive" else chunk_text
+
+
 class PlainIngestor:
     def __init__(self, embedder: Embedder | None = None):
         self.embedder = embedder or get_embedder()
@@ -60,12 +64,13 @@ class PlainIngestor:
         self.client = get_qdrant_client()
 
     def _discover_and_chunk(self, raw_dir: Path) -> list[Chunk]:
+        chunker = _chunker()
         all_chunks: list[Chunk] = []
         for path in _discover_source_files(raw_dir):
             text = _extract_text(path)
             source_doc = str(path.relative_to(raw_dir).as_posix())
             doc_type = path.relative_to(raw_dir).parts[0]
-            for i, chunk_str in enumerate(chunk_text(text)):
+            for i, chunk_str in enumerate(chunker(text)):
                 all_chunks.append(
                     Chunk(
                         id=_chunk_id(source_doc, i),
