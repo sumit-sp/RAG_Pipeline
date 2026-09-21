@@ -1,6 +1,6 @@
 # EU AI Act Compliance Assistant
 
-> **Status:** Phase 2 of the build spec complete (eval harness + baseline). Not yet deployed. See [`PROGRESS.md`](PROGRESS.md) for the detailed phase-by-phase log and [`DECISIONS.md`](DECISIONS.md) for why things were built the way they were. This README is kept up to date as the project progresses, rather than written once at the end.
+> **Status:** Phase 3 in progress (retrieval & generation quality). Not yet deployed. See [`EVALUATION_HISTORY.md`](EVALUATION_HISTORY.md) for the full step-by-step story of how the eval numbers evolved, [`PROGRESS.md`](PROGRESS.md) for the phase-by-phase task log, and [`DECISIONS.md`](DECISIONS.md) for why things were built the way they were. This README is kept up to date as the project progresses, rather than written once at the end.
 
 ## What this is
 
@@ -157,8 +157,9 @@ Once pushed to GitHub, add `GROQ_API_KEY` as a repository secret (Settings → S
 
 Current best (Phase 3, hybrid retrieval — dense + BM25 sparse, RRF fusion), measured across
 component/pipeline/application-level checks: **24/41 golden-set questions (59%) pass all six
-checks simultaneously.** Full history, by-difficulty breakdowns, and the reasoning behind each
-kept/reverted change are in `eval/results.md` and `DECISIONS.md`.
+checks simultaneously.** **For the full step-by-step story — starting point, each change tried,
+and its measured impact — see [`EVALUATION_HISTORY.md`](EVALUATION_HISTORY.md).** Raw numbers in
+`eval/results.md`, rationale in `DECISIONS.md`.
 
 | Check | Level | Mean / rate | Pass rate |
 |---|---|---|---|
