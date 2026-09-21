@@ -10,6 +10,7 @@ This spec is phased on purpose. The person you're building this with has a docum
 4. **Every phase ends with something runnable**, not just code that should work. If a phase is running long, ship the smaller version and note the gap in `PROGRESS.md` rather than polishing in place.
 5. Log non-trivial decisions in `DECISIONS.md` as you make them, including rejected alternatives and negative results — not retroactively at the end.
 6. **Optimize for readability and simplicity over cleverness or unnecessary abstraction, in the `plain` backend especially.** The person needs to be able to understand and personally debug every important piece of this code. If a design pattern, indirection layer, or framework feature doesn't earn its complexity for this specific system, don't add it — when in doubt, write the more boring, more obvious version.
+7. **Don't reach for a full LLM-judge run by default.** For any change, run the cheapest tier that can actually answer the question first (see "Evaluation cost strategy" below) — full 41-question, uncached, LLM-judge runs are for confirmed candidates and periodic checkpoints, not every tweak.
 
 ---
 
@@ -84,7 +85,7 @@ rag-portfolio/
 | Parsing | HTML parsing (BeautifulSoup/markdown-it, preserving heading hierarchy) for the EUR-Lex/artificialintelligenceact.eu/gdpr-info.eu sources; PyMuPDF for the PDF guidance documents (items 3–6 in Phase 0) | Most of this corpus is already-structured HTML — exploit that instead of treating it like a scanned PDF |
 | Vector store | Qdrant (local Docker) | Native hybrid search, correct metadata pre-filtering |
 | Embeddings | Pick one API (OpenAI / Voyage / Cohere) and record why | Not the differentiator — don't over-invest here early |
-| Evaluation | DeepEval + custom golden set | Pytest-native (`assert_test()`, metric thresholds) — plugs directly into the CI gate below, more naturally than Ragas's dataset-oriented workflow |
+| Evaluation | DeepEval + custom golden set, tracked as Langfuse Datasets/Experiments | Pytest-native (`assert_test()`, metric thresholds) — plugs directly into the CI gate below; see "Evaluation cost strategy" for the cascade/sample/cache approach that keeps this affordable to run repeatedly |
 | API | FastAPI | |
 | Demo UI | Streamlit (Gradio is an equally valid swap) | Chainlit looks like the better fit on paper (built-in source tracing, feedback, streaming) but its founding team stepped back from active development in May 2025 and two high-severity CVEs surfaced in late 2025 — avoid it for now |
 | Observability | Langfuse (self-hosted via Docker) | Free, MIT-licensed, tracing + cost + eval in one |
@@ -107,6 +108,21 @@ Ingestion, retrieval, and generation are each built twice, behind one shared int
 **Why sequenced this way, not built together from the start:** building both from Phase 1 doubles the implementation surface of the three most central modules in this project, right when the goal is a deployed, evaluated system as fast as possible — that's the same trap as the original ingestion-perfectionism problem, just spread across two backends instead of one. Shipping the `plain` version end-to-end first, with real eval numbers, guarantees a finished project exists regardless of what happens with the comparison. The comparison itself is genuinely valuable — few candidates run the same golden set through a hand-rolled pipeline and a framework-based one and report the difference — it's just sequenced as a deliberate stretch goal, not a parallel obligation.
 
 **One thing to expect, not fix:** the `langchain` backend will likely score worse on the readability/debuggability principle (rule 6 above) than `plain` — that's an accurate finding about the framework for this use case, not a sign it was implemented badly. Report that as a result; don't paper over it to make the comparison look more balanced than it is.
+
+---
+
+## Evaluation cost strategy (standing practice from Phase 3 onward)
+
+Full LLM-judge runs over the whole golden set are not the default feedback loop for small changes — cascade from free to expensive, and only spend judge budget once a cheaper signal already says a change looks promising.
+
+1. **Cascade:**
+   - *Tier 0 (free, every change):* deterministic retrieval metrics (Hit Rate@k, Recall@k, MRR) computed against `expected_source_doc`/`expected_source_section` — no LLM calls. This is the entire feedback loop for chunk size, embedding model/dimensions, hybrid search weights, and reranking.
+   - *Tier 1 (cheap, one call):* embedding-similarity between generated answer and `expected_answer`, plus free exact-match checks for fact-heavy questions (dates, figures) — the fast signal for generation-model/prompt changes.
+   - *Tier 2 (DeepEval LLM-judge — faithfulness, answer relevancy, contextual precision/recall):* reserved for changes that already look good on Tiers 0–1, or for periodic checkpoints.
+2. **Sample:** iterate against a fixed stratified subset (10–12 questions covering every difficulty tag, including the temporal-conflict cases) for Tier 2 checks. Run the full 41-question set only for confirmed candidates or on a schedule (e.g. weekly) — the schedule exists specifically to catch regressions the sample would otherwise miss.
+3. **Cache:** DeepEval caches results keyed on test case content + metric threshold + judge model — an unchanged case costs nothing to re-run. Keep a cache-bypass flag for periodic full audits, and if any custom caching is added on top, key it on actual retrieved context/generated answer, never on a config label alone.
+
+**Tracking history and comparing runs:** use Langfuse (already self-hosted) rather than building a new dashboard. The golden set is a Langfuse **Dataset**; every config variant (a chunk-size change, a new embedding model, a new generation model) is an **Experiment run** against it, capturing both Tier 0 code-evaluator scores and Tier 2 judge scores in one place. Use Langfuse's **Compare Experiments** view for side-by-side history across runs, and its baseline-approval workflow to decide what "current best" means at any point, rather than tracking that by hand. Keep `eval/results.md` as the distilled, portfolio-facing summary, and consider a screenshot of the comparison view for the README — a real experiment-tracking dashboard reads better to a reviewer than a static table alone.
 
 ---
 
