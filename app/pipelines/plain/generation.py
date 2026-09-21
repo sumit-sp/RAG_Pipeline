@@ -4,6 +4,7 @@ from groq import Groq
 
 from app.core import config
 from app.core.models import Answer, RetrievedContext
+from app.core.tracing import trace_generation
 
 _SYSTEM_PROMPT = (
     "You are a compliance assistant answering questions about the EU AI Act and "
@@ -28,26 +29,47 @@ class PlainGenerator:
         user_prompt = (
             f"Context excerpts:\n{_format_context(contexts)}\n\nQuestion: {question}"
         )
-        response = self.client.chat.completions.create(
+        model_parameters = {
+            "temperature": 0.0,
+            "max_completion_tokens": 4096,
+            "reasoning_effort": "low",
+        }
+        with trace_generation(
+            name="plain-generator",
+            input={"system": _SYSTEM_PROMPT, "user": user_prompt},
             model=config.GENERATION_MODEL,
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.0,
-            max_completion_tokens=4096,
-            reasoning_effort="low",
-        )
-        choice = response.choices[0]
-        text = choice.message.content
-        if not text:
-            # gpt-oss models spend part of the token budget on hidden "reasoning"
-            # tokens before the visible answer; with finish_reason="length" that
-            # budget can run out before any answer is emitted. Surface this as a
-            # visible failure instead of silently returning an empty answer.
-            raise RuntimeError(
-                f"Groq returned an empty response (finish_reason={choice.finish_reason!r}) "
-                f"for question: {question!r}"
+            model_parameters=model_parameters,
+        ) as trace:
+            response = self.client.chat.completions.create(
+                model=config.GENERATION_MODEL,
+                messages=[
+                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+                **model_parameters,
+            )
+            choice = response.choices[0]
+            text = choice.message.content
+            if not text:
+                # gpt-oss models spend part of the token budget on hidden "reasoning"
+                # tokens before the visible answer; with finish_reason="length" that
+                # budget can run out before any answer is emitted. Surface this as a
+                # visible failure instead of silently returning an empty answer.
+                raise RuntimeError(
+                    f"Groq returned an empty response (finish_reason={choice.finish_reason!r}) "
+                    f"for question: {question!r}"
+                )
+
+            usage = response.usage
+            trace.set_output(
+                text,
+                usage={
+                    "input": usage.prompt_tokens,
+                    "output": usage.completion_tokens,
+                    "total": usage.total_tokens,
+                }
+                if usage
+                else None,
             )
 
         citations = sorted({c.chunk.source_doc for c in contexts})

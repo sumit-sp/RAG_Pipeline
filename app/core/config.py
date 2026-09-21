@@ -61,3 +61,11 @@ def collection_name() -> str:
     return QDRANT_COLLECTION if RETRIEVAL_MODE == "dense" else f"{QDRANT_COLLECTION}_{RETRIEVAL_MODE}"
 
 DATA_RAW_DIR = os.environ.get("DATA_RAW_DIR", "data/raw")
+
+# Langfuse (Langfuse Cloud, not self-hosted — see DECISIONS.md). Tracing is a
+# no-op if these are unset, so local dev without a Langfuse account still works.
+LANGFUSE_PUBLIC_KEY = os.environ.get("LANGFUSE_PUBLIC_KEY")
+LANGFUSE_SECRET_KEY = os.environ.get("LANGFUSE_SECRET_KEY")
+LANGFUSE_HOST = os.environ.get("LANGFUSE_HOST") or os.environ.get(
+    "LANGFUSE_BASE_URL", "https://cloud.langfuse.com"
+)
