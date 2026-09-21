@@ -257,6 +257,41 @@ correctly declined rather than guess) · Incorrect/Hallucinated 1 (2%).
    contents) before the substantive content, diluting effective context
    precision even in chunks that are otherwise correctly ranked and on-topic.
 
+### Step 7 — Contextual chunk headers (Groq-free screening) — KEPT, new best
+
+Per Anthropic's "contextual retrieval" technique, and per the new standing rule
+that LLM-content-generation tasks go through an external Sonnet-5 export rather
+than Groq: exported every source document's full text plus its fixed-500/50
+chunk list to `eval/chunks_for_contextual_headers.jsonl` (25 docs, 837 chunks —
+`eval/export_chunks_for_contextual_headers.py`), had the user run it through
+Claude Sonnet 5 externally, and got back `eval/contextual_headers.jsonl` (837
+one- to two-sentence headers, one per chunk, situating each chunk within its
+document before embedding — see `eval/CONTEXTUAL_HEADERS_INSTRUCTIONS.md`).
+
+Re-ingested with `USE_CONTEXTUAL_HEADERS=true` (fixed 500/50 chunking + hybrid
+retrieval — the current default combination, matched to the chunking used when
+the headers were generated so the `(source_doc, chunk_index)` mapping stays
+valid) and re-ran the Groq-free retrieval-hit screen:
+
+| Chunking / config | Retrieval hit rate |
+|---|---|
+| Fixed 500/50 + hybrid (baseline) | 33/41 (80%) |
+| Recursive 500/50 + hybrid (Step 5) | 34/41 (83%) |
+| **Fixed 500/50 + hybrid + contextual headers** | **36/41 (87.8%)** — new best |
+
+Contextual headers beat recursive chunking's win from Step 5, using the same
+fixed-chunking base it was generated against. Remaining misses: one
+Digital-Omnibus-amended-date question, an Article 53 open-source-exemption
+question, two special-category-personal-data-in-recruitment questions, and one
+Article 50(1)/GPAI-transparency-overlap question — all cross-reference or
+multi-hop by nature, consistent with every earlier measurement in this
+document.
+
+**Not yet tried:** contextual headers combined with recursive chunking (would
+need regenerating the header export against recursive chunk boundaries first,
+since headers are keyed by chunk index and the two chunkers produce different
+boundaries) — a plausible next stacking win, not yet measured.
+
 ## 4. Pass-rate timeline at a glance
 
 | Stage | Checks used | Overall pass rate |
@@ -268,6 +303,7 @@ correctly declined rather than guess) · Incorrect/Hallucinated 1 (2%).
 | + Retrieval-hit & Answer-Correctness checks | 6 total | **24/41 (59%) — current reference point** |
 | + Recursive chunking (Groq-free screen only) | retrieval-hit only | 34/41 hit rate (83%) |
 | + Recursive chunking, judged by Claude Sonnet 5 | independent judge, 6 metrics | 34/41 doc-recall (83%, confirms the screen); 29/41 (71%) fully/mostly correct by outcome label |
+| + Contextual chunk headers (fixed chunking + hybrid) | retrieval-hit only | **36/41 hit rate (87.8%) — new best** |
 
 ## 5. What's still open
 
@@ -283,7 +319,10 @@ correctly declined rather than guess) · Incorrect/Hallucinated 1 (2%).
 - **Strip navigation/boilerplate at ingestion** for Service Desk article chunks
   (Finding 7) — cheap, mechanical, and currently diluting context precision.
 - Consider a self-consistency check across paraphrased queries (Finding 4).
-- Untried from Phase 3's list: contextual chunk headers.
+- **Contextual headers not yet judged on the full 6-check Groq/Sonnet harness**
+  — Step 7 only ran the Groq-free retrieval-hit screen, same caveat as Step 5
+  had before Step 6.
+- Contextual headers + recursive chunking stacked together — not yet tried.
 - Phase 4 (ingestion sophistication — effective-date metadata, cross-reference
   linking) not started; the retrieval-hit misses (Digital-Omnibus-adjacent and
   cross-reference questions) remain the concrete targets, now with two
