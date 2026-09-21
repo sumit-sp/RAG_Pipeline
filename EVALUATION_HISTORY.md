@@ -172,15 +172,90 @@ Recursive chunking is a small, real (non-noisy — this check has no LLM
 variance), and so-far-unbeaten win. Not yet validated on the full 6-check,
 Groq-based eval.
 
-### Step 6 — External LLM-as-judge export (in progress)
+### Step 6 — External LLM-as-judge (Claude Sonnet 5) on hybrid + recursive chunking
 
-Exported the live pipeline's output (hybrid retrieval + recursive chunking) against
-all 41 questions — retrieved chunks with rank/score/text, generated answer,
-citations, and the golden reference — to
-`eval/pipeline_outputs_for_external_judge.jsonl`, for independent judging by Claude
-Sonnet 5 rather than the Groq-family judge already in use (`gpt-oss-120b` judging
-`gpt-oss-20b` shares a lab and model family, a self-grading-bias risk worth
-cross-checking). **Results pending** — not yet folded back into this document.
+Exported the live pipeline's output (hybrid retrieval + **recursive chunking** —
+the untested-by-Groq winner from Step 5) against all 41 questions to
+`eval/pipeline_outputs_for_external_judge.jsonl`, then had Claude Sonnet 5 judge it
+independently of the Groq-family judge (`gpt-oss-120b` judging `gpt-oss-20b`
+shares a lab and model family — an independent judge is a stronger check). Full
+report: `eval/rag_eval_report.xlsx`.
+
+**Note on comparability:** this run changed *two* things at once relative to the
+Groq-based 24/41 reference point (Step 4) — the judge (Claude vs. Groq) *and* the
+chunking strategy (recursive vs. fixed 500/50). The numbers below are not a clean
+"Claude disagrees with Groq" comparison; a same-config, judge-only comparison
+hasn't been run yet.
+
+**Overall results (N=41):**
+
+| Metric | Value | What it measures |
+|---|---|---|
+| Context Recall @5 (doc-level) | 82.9% (34/41) | Gold document present anywhere in top-5 retrieved chunks |
+| Mean Reciprocal Rank (MRR) | 0.560 | How high the gold document ranks when found (1.0 = always rank 1) |
+| Citation Recall | 82.9% (34/41) | Gold document appears in the answer's citation list |
+| Faithfulness (judge-scored) | 0.959 | Every claim in the answer traces back to retrieved context |
+| Answer Correctness (judge-scored) | 0.780 | Answer matches the gold answer in substance, including carve-outs |
+| Answer Relevancy | 1.00 (41/41) | All answers stay on-topic |
+
+The 34/41 (82.9%) doc-level recall figure is an **exact match** with the
+Groq-free retrieval-hit screen for recursive chunking in Step 5 (also 34/41) —
+independent confirmation that recursive chunking's retrieval win is real, from a
+completely different measurement method.
+
+**By difficulty:**
+
+| Difficulty | n | Retrieval Hit@5 | MRR | Faithfulness | Answer Correctness |
+|---|---|---|---|---|---|
+| single-hop | 28 | 92.9% | 0.671 | 1.00 | 0.857 |
+| cross-reference | 8 | 62.5% | 0.354 | 0.850 | 0.744 |
+| multi-hop | 3 | 33.3% | 0.167 | 0.833 | 0.433 |
+| temporal-conflict | 2 | 100% | 0.417 | 1.00 | 0.375 |
+
+Same story as every earlier measurement: single-hop is solid, multi-hop and
+cross-reference are materially weaker (correctness ~0.43-0.74 vs. ~0.86).
+
+**Outcome distribution:** Correct 27, Correct-Partial 1, Correct-Condensed 1
+(→ 29/41, 71% fully correct or correct-with-minor-gaps) · Partial 6,
+Partial/Incorrect 1 (7/41, 17%) · Abstained-Justified/Task Fail 4 (10%, the model
+correctly declined rather than guess) · Incorrect/Hallucinated 1 (2%).
+
+**Key findings — new, concrete, and actionable:**
+
+1. **Citations aren't an independent signal.** In 41/41 records, the `citations`
+   list is exactly the set of unique document paths in the retrieved chunks — the
+   pipeline echoes back whatever was retrieved rather than selecting which sources
+   actually support the answer. Citation Recall is therefore mechanically
+   identical to retrieval hit-rate, not a real check on generation quality.
+2. **Document-level retrieval hit-rate overstates true recall.** Two verified
+   cases retrieved the *correct document* but the *wrong chunk within it* — the
+   specific sentence needed (a compliance date, a 5-business-day SLA) sat in a
+   different chunk that wasn't fetched. Both count as "hits" at the document
+   level but the task still failed. This is the single largest driver of the gap
+   between an 83% document-level hit-rate and a 78% answer-correctness rate.
+3. **One clear hallucination under good retrieval.** The gold answer (GDPR Art.
+   9's "without prejudice" clause) was present verbatim in two retrieved chunks,
+   yet the model built a fluent, confident answer around the wrong regulation
+   (misnaming Directive 2016/680 as the "Biometric Data Directive") and never
+   mentioned GDPR Art. 9 — a plausible-sounding but substantively wrong answer to
+   a legal cross-reference question, the most consequential single error found.
+4. **Self-inconsistency across near-duplicate questions.** Asked essentially the
+   same fact two ways, the system correctly cited Art. 53(2) for the open-source
+   exemption in one answer, then claimed in the next that the exemption is "set
+   out in Article 53(1)(a) and (b) itself" — contradicting its own prior answer.
+   No self-consistency/verification step exists across paraphrased queries.
+5. **Multi-hop and cross-reference remain the weak point**, confirming every
+   earlier measurement in this document from an independent judge and a changed
+   chunking strategy.
+6. **Completeness lags even on retrieval "hits."** Several records state the
+   correct top-level answer but drop a specific carve-out, exception, or
+   safeguard the gold answer treats as essential (e.g. GDPR Art. 22(2)/(3)
+   safeguards, a law-enforcement exception). Retrieval succeeded; the gap is in
+   extraction/synthesis completeness.
+7. **Chunking carries boilerplate noise.** Many Service Desk article chunks are
+   prefixed with ~100-150 tokens of repeated navigational text (a full table of
+   contents) before the substantive content, diluting effective context
+   precision even in chunks that are otherwise correctly ranked and on-topic.
 
 ## 4. Pass-rate timeline at a glance
 
@@ -191,14 +266,26 @@ cross-checking). **Results pending** — not yet folded back into this document.
 | + Hybrid search | 4 pipeline | 31/41 (76%) |
 | + Reranking (reverted) | 4 pipeline | 26/41 (63%) |
 | + Retrieval-hit & Answer-Correctness checks | 6 total | **24/41 (59%) — current reference point** |
-| + Recursive chunking (Groq-free screen only) | retrieval-hit only | 34/41 hit rate (83%), full eval pending |
+| + Recursive chunking (Groq-free screen only) | retrieval-hit only | 34/41 hit rate (83%) |
+| + Recursive chunking, judged by Claude Sonnet 5 | independent judge, 6 metrics | 34/41 doc-recall (83%, confirms the screen); 29/41 (71%) fully/mostly correct by outcome label |
 
 ## 5. What's still open
 
-- Fold the external (Claude) judge's results into this document once available,
-  and decide whether recursive chunking becomes the default.
+- **Run recursive chunking through the same Groq-based 6-check harness** used for
+  Step 4, so it can be directly compared to the 24/41 reference point on equal
+  footing (Step 6 changed the judge and the chunking strategy at once).
+- **Implement claim-level citation attribution** (Finding 1) — citations
+  currently just echo the retrieved set rather than reflecting what actually
+  supports the answer.
+- **Add a chunk-level recall metric**, not just document-level (Finding 2) — the
+  biggest measured driver of the gap between retrieval-hit-rate and
+  answer-correctness.
+- **Strip navigation/boilerplate at ingestion** for Service Desk article chunks
+  (Finding 7) — cheap, mechanical, and currently diluting context precision.
+- Consider a self-consistency check across paraphrased queries (Finding 4).
 - Untried from Phase 3's list: contextual chunk headers.
 - Phase 4 (ingestion sophistication — effective-date metadata, cross-reference
   linking) not started; the retrieval-hit misses (Digital-Omnibus-adjacent and
-  cross-reference questions) are the concrete targets it should aim at.
+  cross-reference questions) remain the concrete targets, now with two
+  independent judges' worth of evidence pointing at the same weak spots.
 - Deployment (Render/Railway) deferred pending a separate GitHub account setup.

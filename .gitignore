@@ -26,5 +26,8 @@ qdrant_local_data/
 # Logs
 *.log
 
+# Excel lock files
+~$*.xlsx
+
 # DeepEval local run cache
 .deepeval/
