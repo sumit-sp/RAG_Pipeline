@@ -33,6 +33,14 @@ CHUNK_SIZE_TOKENS = int(os.environ.get("CHUNK_SIZE_TOKENS", "500"))
 CHUNK_OVERLAP_TOKENS = int(os.environ.get("CHUNK_OVERLAP_TOKENS", "50"))
 CHUNKING_STRATEGY = os.environ.get("CHUNKING_STRATEGY", "fixed")
 
+# Contextual chunk headers (Phase 3): prepended to each chunk before embedding.
+# Generated externally by Claude Sonnet 5, never by Groq — see
+# eval/CONTEXTUAL_HEADERS_INSTRUCTIONS.md and DECISIONS.md.
+USE_CONTEXTUAL_HEADERS = os.environ.get("USE_CONTEXTUAL_HEADERS", "false").lower() == "true"
+CONTEXTUAL_HEADERS_PATH = os.environ.get(
+    "CONTEXTUAL_HEADERS_PATH", "eval/contextual_headers.jsonl"
+)
+
 # Retrieval — Phase 3 adds "hybrid" (dense + BM25 sparse, RRF fusion) as an
 # alternative to Phase 1's "dense"-only baseline. Each mode gets its own Qdrant
 # collection (different vector schemas), so switching doesn't require re-ingesting

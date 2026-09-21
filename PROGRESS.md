@@ -58,4 +58,16 @@ Phase 3 exit criteria met: eval numbers meaningfully improved over the Phase 2 b
 - [x] Exported full pipeline outputs (hybrid retrieval + recursive chunking, all 41 questions) to `eval/pipeline_outputs_for_external_judge.jsonl`, judged independently by Claude Sonnet 5 (`eval/rag_eval_report.xlsx`). Results folded into `EVALUATION_HISTORY.md` (Step 6) and `DECISIONS.md`: 34/41 (83%) doc-level retrieval recall — exact match with the Groq-free screen, cross-confirming that result. Surfaced new, concrete findings: citations just echo retrieved docs (no independent signal), document-level recall hides chunk-level misses, one clear hallucination under good retrieval, a self-consistency failure across near-duplicate questions, and boilerplate nav text diluting Service Desk chunks.
 - [x] Created `EVALUATION_HISTORY.md` — the single consolidated narrative (corpus/goal, naive baseline, every improvement tried with before/after numbers) that was previously scattered across README/PROGRESS/DECISIONS/results.md.
 
-Next: get explicit go-ahead before continuing. Open items: run recursive chunking through the Groq-based 6-check harness for a same-config comparison; act on the new findings (citation attribution, chunk-level recall metric, strip Service Desk boilerplate); untried Phase 3 item (contextual chunk headers); or move to Phase 4.
+## Standing rules (2026-09-21)
+
+- **Groq restricted to generation only** — no more Groq for judging or any other LLM-assist task.
+- **LLM-judge / LLM-content-generation tasks now go through a JSON export**, run externally through Claude Sonnet 5 by the user, results brought back manually. Established pattern: `eval/export_for_external_judge.py` (already used once, Phase 3 Step 6).
+- Following from this: `eval/judge_model.py` and the Groq-judge metrics in `eval/run_eval.py` are kept as an optional manual tool, **not run in CI or by default**. `.github/workflows/eval.yml` now runs only `eval/test_retrieval_hit.py` — Groq-free, deterministic, no API key needed, gated on an aggregate hit-rate floor (75%) rather than per-question so it doesn't stay red over already-documented gaps.
+
+## Phase 3 — Contextual chunk headers (in progress, awaiting external processing)
+
+- [x] `eval/export_chunks_for_contextual_headers.py` — exports every source document's full text + its own chunk list (25 documents, 837 chunks, current default fixed-500/50 chunking) to `eval/chunks_for_contextual_headers.jsonl`, with task instructions in `eval/CONTEXTUAL_HEADERS_INSTRUCTIONS.md`, for the user to run through Claude Sonnet 5 separately.
+- [x] Ingestion-side consumer ready: `app/pipelines/plain/contextual_headers.py` + `USE_CONTEXTUAL_HEADERS`/`CONTEXTUAL_HEADERS_PATH` config, wired into `PlainIngestor` — prepends the returned header to each chunk before embedding. Tested with a fake header; verified correct chunk targeting. Does nothing until `eval/contextual_headers.jsonl` (837 lines expected) comes back.
+- [ ] Awaiting the user's Sonnet-5 output, then: re-ingest with headers on, re-run the Groq-free retrieval-hit check, and (per the new rule) get judged results via another external export rather than the Groq judge.
+
+Next: get explicit go-ahead before continuing. Other open items: run recursive chunking through a same-config comparison; act on the Step-6 findings (citation attribution, chunk-level recall metric, strip Service Desk boilerplate); or move to Phase 4.

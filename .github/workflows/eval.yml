@@ -21,10 +21,14 @@ jobs:
         run: python -m app.pipelines.plain.ingestion
         env:
           EMBEDDING_BACKEND: local
+          RETRIEVAL_MODE: hybrid
 
-      - name: Run eval suite
-        run: deepeval test run eval/run_eval.py
+      # Groq-free, deterministic, no API key needed — see DECISIONS.md
+      # ("Groq restricted to generation only"). Full LLM-judged quality eval
+      # (faithfulness, answer correctness, etc.) is a separate manual process
+      # via eval/export_for_external_judge.py, not run in CI.
+      - name: Run retrieval-hit regression check
+        run: pytest eval/test_retrieval_hit.py -v
         env:
           EMBEDDING_BACKEND: local
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          GENERATION_MODEL: openai/gpt-oss-20b
+          RETRIEVAL_MODE: hybrid

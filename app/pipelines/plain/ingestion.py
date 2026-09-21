@@ -16,6 +16,7 @@ from app.core import config
 from app.core.interfaces import Embedder
 from app.core.models import Chunk
 from app.pipelines.plain.chunking import chunk_text, recursive_chunk_text
+from app.pipelines.plain.contextual_headers import apply_header, load_headers
 from app.pipelines.plain.embedding import get_embedder
 from app.pipelines.plain.sparse_embedding import SparseEmbedder
 from app.pipelines.plain.vector_store import (
@@ -65,12 +66,18 @@ class PlainIngestor:
 
     def _discover_and_chunk(self, raw_dir: Path) -> list[Chunk]:
         chunker = _chunker()
+        headers = (
+            load_headers(Path(config.CONTEXTUAL_HEADERS_PATH))
+            if config.USE_CONTEXTUAL_HEADERS
+            else {}
+        )
         all_chunks: list[Chunk] = []
         for path in _discover_source_files(raw_dir):
             text = _extract_text(path)
             source_doc = str(path.relative_to(raw_dir).as_posix())
             doc_type = path.relative_to(raw_dir).parts[0]
             for i, chunk_str in enumerate(chunker(text)):
+                chunk_str = apply_header(chunk_str, headers.get((source_doc, i)))
                 all_chunks.append(
                     Chunk(
                         id=_chunk_id(source_doc, i),
