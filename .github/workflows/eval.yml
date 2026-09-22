@@ -17,6 +17,16 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # TEMPORARY — diagnosing why CI's retrieval-hit rate (70.7%) doesn't
+      # match the identical code/config run fresh locally on Windows (97.6%).
+      # Every CI miss is from a PDF-sourced document, never an HTML one, which
+      # points at pymupdf extracting PDF text differently on Linux vs Windows,
+      # misaligning contextual headers (matched by chunk_index). This step
+      # prints extraction fingerprints to confirm — remove once confirmed, see
+      # EVALUATION_HISTORY.md Step 15 follow-up.
+      - name: DEBUG - PDF extraction fingerprint
+        run: python -m eval.debug_pdf_extraction_diagnostic
+
       - name: Ingest corpus into local Qdrant
         run: python -m app.pipelines.plain.ingestion
         env:
