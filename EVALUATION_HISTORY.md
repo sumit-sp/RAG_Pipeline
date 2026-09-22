@@ -635,12 +635,91 @@ or a semantic router instead.
 
 **Scope check — how often does this actually fire?** 15 of 41 golden-set
 questions now trigger a boost (up from ~6-8 under the keyword-only version),
-averaging ~5 extra chunks each. Spot-checked and all firings look legitimate
-(e.g. AI Act Articles 10/11/12/14 questions pull in GDPR content because
-those articles' own text explicitly invokes GDPR), not spurious — but this
-is a broader behavior change than Step 11's narrow fix, and **not yet
-re-judged with Sonnet-5**, so whether the extra context helps or dilutes
-answer quality on the 9 newly-boosted non-GDPR questions isn't measured yet.
+averaging ~5 extra chunks each. At the time this step was written, these
+firings had only been spot-checked for whether the *topic* looked plausibly
+related (e.g. AI Act Articles 10/11/12/14 do explicitly invoke GDPR
+somewhere in their own text) — **this held up less well than it looked**:
+Step 13's actual Sonnet-5 judging of these 15 questions found that
+topic-level plausibility isn't the same as question-level relevance, with
+real costs (a systematic citation-accuracy drop, and two real answer-quality
+regressions) alongside real wins. See Step 13 for the full, judged picture.
+
+### Step 13 — Judged the cross-reference boost's 15 affected questions: a real, mixed result
+
+Step 12's own "spot-checked and all firings look legitimate" claim doesn't
+survive Sonnet-5 judging — topical relevance (the AI Act article *does*
+discuss something GDPR-adjacent) turned out not to mean the specific
+boosted-in GDPR chunk was actually relevant to *that question*. Judged only
+the 15 questions the boost touches (`eval/boosted_subset_judge_scores.jsonl`),
+compared directly against each question's existing Step 10 score (before the
+boost existed) — a clean, matched before/after on the same 15 questions:
+
+| Metric | Before (Step 10) | After (boost fires) | Δ |
+|---|---|---|---|
+| Retrieval Hit | 73.3% | 100% | **+26.7 pts** |
+| Chunk-Level Hit | 66.7% | 93.3% | **+26.7 pts** |
+| MRR | 0.633 | 0.668 | +0.035 |
+| Faithfulness | 0.843 | 0.867 | +0.023 |
+| Answer Correctness | 0.803 | 0.760 | **−0.043** |
+| Citation Accuracy | 0.617 | 0.510 | **−0.107** |
+
+Retrieval got unambiguously better. **Answer correctness and citation
+accuracy both got slightly worse on average**, and the aggregate hides a
+sharper split underneath:
+
+**Real, substantial wins (the mechanism doing exactly what it was built
+for) — 4 questions:** the CV-screening GDPR question jumped 0.35 → 0.65
+(Correct-Partial vs. previously Partial) as GDPR special-category rules
+were finally grounded instead of hand-waved; the recruitment-bias GDPR
+question and the Article-50-watermark question both improved on
+faithfulness/citation-accuracy from newly-surfaced, genuinely relevant text;
+and the GPAI open-source-exemption question gained a second, independent,
+correct confirmation of the Article 53(2)/54(6) distinction — the exact
+distinction whose confusion caused the worst error found in Step 8.
+
+**One severe regression — the single most concerning result from this
+round:** "Does the Digital Omnibus change when Chapters I and II of the AI
+Act apply?" went from a correct, if incomplete, answer (0.55, Partial) to a
+**non-answer** (0.10, Task-Fail). The boost appended 5 GDPR chunks with zero
+bearing on the question (adequacy decisions, processor contracts, delegated
+acts); the model, faced with that irrelevant bulk alongside the actually-useful
+chunk it already had, second-guessed itself into "I cannot confirm" instead
+of using the evidence it had. **More context made the answer worse, not just
+unhelpful.**
+
+**One moderate regression:** the Article 5(1)(h)/GDPR-biometric-interaction
+question dropped from 0.55 to 0.45 and produced a longer,
+table-formatted answer that **contradicts itself** — one row states GDPR's
+Article 9(1) "still applies" to the law-enforcement case the AI Act exempts,
+which is backwards, while the same answer's own bottom line gets the scoping
+right. Longer and more structured, but less reliable — the same "confidently
+wrong, self-inconsistent" failure pattern flagged as the worst error in Step
+8, now apparently *induced* by adding more (irrelevant) context rather than
+just co-existing with good retrieval.
+
+**Systematic citation-accuracy cost across the other 9 questions:** on every
+question where the boosted-in document wasn't actually used (7 of the 9
+single-hop AI-Act-article questions: Articles 5, 6(3), 10, 11, 12, 14, 113),
+citation accuracy dropped — sometimes sharply (0.90 → 0.50) — because the
+boosted document still gets listed as a citation even though the answer
+never draws on it, the same mechanical "citations echo the retrieved set"
+problem from Step 6's finding 1, now made worse simply because the boost
+widens the retrieved set on more questions.
+
+**Root cause, in plain terms:** the corpus-tag signal fires whenever *any*
+retrieved chunk names another document, regardless of how central that
+mention is to the actual question. An AI Act article that name-drops GDPR
+in a boilerplate "without prejudice to..." clause triggers the same
+full-strength boost as a chunk where the cross-reference is the entire point
+— the mechanism has no notion of relevance, only presence.
+
+**Not yet acted on — options for a future refinement:** restrict the
+corpus-tag signal to only fire from a top-1 or top-2 ranked chunk (a passing
+mention buried in a rank-5 chunk is far less likely to be question-relevant
+than one in the top-ranked chunk); or require the boosted document to
+actually get used in the final answer before crediting it in citations
+(addressing the citation-accuracy cost directly, independent of the boost
+question). No config change made yet — this step is measurement only.
 
 ## 4. Pass-rate timeline at a glance
 
@@ -658,6 +737,7 @@ answer quality on the 9 newly-boosted non-GDPR questions isn't measured yet.
 | + Contextual headers, judged by Claude Sonnet 5 on all 41 | independent judge, 6 metrics, full set | **36/41 doc-recall (87.8%, confirms the Groq-free screen); 34/41 (82.9%) fully/mostly correct — best full-set outcome-distribution result yet** |
 | + GDPR cross-reference boost (keyword-triggered) | retrieval-hit only | 39/41 hit rate (95.1%), zero regressions |
 | + Corpus-side cross-reference tagging (generalizes the above) | retrieval-hit only | **40/41 hit rate (97.6%) — new best** |
+| Same boost, judged by Claude Sonnet 5 on the 15 questions it affects | independent judge, 6 metrics, boost-affected questions only | Retrieval Hit 73.3%→100%, Chunk-Level Hit 66.7%→93.3% (both up); **Answer Correctness 0.803→0.760, Citation Accuracy 0.617→0.510 (both down)** — mixed result, see Step 13 |
 
 ## 5. What's still open
 
@@ -678,11 +758,15 @@ answer quality on the 9 newly-boosted non-GDPR questions isn't measured yet.
 - Consider a self-consistency check across paraphrased queries (Finding 4,
   reconfirmed sharply in Step 8 finding 3 — this time producing a wrong
   statutory citation, the most consequential error found so far).
-- **Re-judge the cross-reference boost with Sonnet-5** (Steps 11-12) — only
-  validated with the Groq-free retrieval-hit screen so far (40/41); the
-  downstream effect on faithfulness/answer-correctness/citation-accuracy for
-  the recovered questions, and for the 9 newly-boosted non-GDPR questions
-  under Step 12's broader firing, isn't measured yet.
+- **Fix the cross-reference boost's precision problem** (Step 13, new,
+  actionable) — it fires on any retrieved chunk naming another document,
+  regardless of whether that mention is actually central to the question.
+  Caused a systematic citation-accuracy drop and 2 real answer-quality
+  regressions (one a non-answer where a correct one existed before) across
+  the 9 non-cross-reference questions it touches, alongside 4 genuine wins on
+  actual cross-reference questions. Candidate fixes: only trigger from a
+  top-1/top-2 ranked chunk's tag (not any of the top-5), or only credit a
+  boosted document in citations if the answer actually uses it.
 - **Even the generalized (Step 12) boost still requires a retrieved chunk to
   explicitly name the other document** — verified directly (see Step 12). A
   question whose best-matching chunks never happen to name the cross-referenced

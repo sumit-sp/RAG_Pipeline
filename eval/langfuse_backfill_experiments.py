@@ -146,6 +146,46 @@ def _load_hard_subset_judge_records() -> dict[str, dict]:
     return records
 
 
+def _load_boosted_subset_judge_records() -> dict[str, dict]:
+    """Combines boosted_subset_outputs_for_external_judge.jsonl (real
+    generated answers, cross-reference-boost pipeline) with
+    boosted_subset_judge_scores.jsonl (Claude Sonnet 5's judge scores) for
+    the 15 questions the Step 12 boost actually affects -- the other 26
+    golden-set questions get no score/output for this run since they're
+    byte-identical to the Step 10 run."""
+    outputs = {}
+    for line in (EVAL_DIR / "boosted_subset_outputs_for_external_judge.jsonl").read_text(
+        encoding="utf-8"
+    ).splitlines():
+        if not line.strip():
+            continue
+        rec = json.loads(line)
+        outputs[rec["question"]] = rec["generated_answer"]
+
+    records = {}
+    for line in (EVAL_DIR / "boosted_subset_judge_scores.jsonl").read_text(
+        encoding="utf-8"
+    ).splitlines():
+        if not line.strip():
+            continue
+        rec = json.loads(line)
+        question = rec["question"]
+        scores = {
+            "Retrieval Hit": 1.0 if rec["retrieval_hit"] else 0.0,
+            "Chunk-Level Hit": 1.0 if rec["chunk_level_hit"] else 0.0,
+            "MRR": rec["mrr"],
+            "Faithfulness": rec["faithfulness"],
+            "Answer Correctness": rec["answer_correctness"],
+            "Citation Accuracy": rec["citation_accuracy"],
+        }
+        records[question] = {
+            "output": outputs.get(question),
+            "scores": scores,
+            "comment": f"{rec['outcome_label']} — {rec['comment']}",
+        }
+    return records
+
+
 def backfill_run(
     client: Langfuse,
     dataset,
@@ -225,6 +265,12 @@ def main() -> None:
             "Phase 3 Step 10: hybrid search + contextual chunk headers, judged by Claude Sonnet 5 on all 41 questions (extends Step 8's 15-question hard subset). 36/41 (87.8%) doc-recall -- exact match with the Groq-free screen -- and 34/41 (82.9%) fully/mostly correct, the best full-set outcome-distribution result yet.",
             _load_contextual_headers_full_judge_records(),
             {"retrieval_mode": "hybrid", "use_contextual_headers": True, "qdrant_collection": "ai_act_corpus_hybrid", "use_cross_reference_boost": False},
+        ),
+        (
+            "phase3-hybrid-fixed500-ctxheaders-crossrefboost-sonnet5judged-15q-mixed",
+            "Phase 3 Step 13: judged only the 15 questions the corpus-tag cross-reference boost affects, vs. their Step 10 (pre-boost) scores. Retrieval Hit 73.3%->100%, Chunk-Level Hit 66.7%->93.3% (both up); Answer Correctness 0.803->0.760, Citation Accuracy 0.617->0.510 (both down) -- a mixed result: 4 genuine wins on real cross-reference questions, but 1 severe regression (correct answer -> non-answer) and a systematic citation-accuracy cost on the 9 non-cross-reference questions the boost also fires on unnecessarily. See EVALUATION_HISTORY.md Step 13.",
+            _load_boosted_subset_judge_records(),
+            {"retrieval_mode": "hybrid", "use_contextual_headers": True, "qdrant_collection": "ai_act_corpus_hybrid", "use_cross_reference_boost": True},
         ),
     ]
 
