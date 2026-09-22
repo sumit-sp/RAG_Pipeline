@@ -721,6 +721,70 @@ actually get used in the final answer before crediting it in citations
 (addressing the citation-accuracy cost directly, independent of the boost
 question). No config change made yet — this step is measurement only.
 
+### Step 14 — A real retrieval qrels file: true Precision/Recall, for free, forever
+
+Every retrieval metric up to this point — Retrieval Hit, Chunk-Level Hit,
+MRR — was judged against a single canonical "expected" location per
+question, never against a complete list of every relevant chunk. That means
+none of them were true Precision@k or Recall@k: Precision needs to know
+what fraction of what was retrieved is actually relevant; Recall needs to
+know what fraction of everything relevant was retrieved. Neither is
+answerable without first knowing the full relevant set.
+
+Built that ground truth. Exhaustively judging relevance across all 837
+corpus chunks for all 41 questions (~34,000 judgments) isn't tractable, so
+used the standard IR technique of **pooling**: for each question,
+`eval/export_candidates_for_qrels.py` unions the top-20 results from 4
+independent retrieval methods (dense-only, sparse-only, hybrid, and the live
+pipeline with all current boosts) — no LLM calls, pure retrieval mechanics.
+Mean pool size 33.4 chunks/question (1,369 total). Split into 7 batches
+(`eval/split_qrels_candidates.py`) for careful judging, and had Claude
+Sonnet 5 mark genuinely relevant chunks per a strict rubric
+(`eval/QRELS_JUDGE_INSTRUCTIONS.md`) that explicitly warns against the exact
+mistake Step 13 just found costing real accuracy — confusing topical
+proximity with actual relevance.
+
+`eval/merge_qrels.py` combined and validated the 7 judged batches: all 41
+questions present exactly once, and — importantly — every judged-relevant
+chunk cross-checked against its original candidate pool to catch any
+hallucinated reference before it could corrupt downstream numbers. None
+found. Result: `eval/qrels.jsonl`, mean 2.95 relevant chunks/question
+(range 1-8, 121 total), zero questions with no relevant chunks in their pool.
+
+**Caveat, stated for the record (also in the qrels instructions):** recall
+computed against this file is bounded by the pool, not the full corpus — a
+relevant chunk none of the 4 methods ever surfaced is invisible to it. This
+is the accepted trade-off in real-world IR evaluation (TREC-style pooling),
+not a shortcut unique to this project — just don't read a high recall number
+as "we found everything in the corpus."
+
+**What this unlocks — real numbers, and a free deterministic confirmation of
+Step 13:** `eval/compute_retrieval_metrics.py` computes real Precision/Recall
+for any retrieval config against the live pipeline, no LLM judging needed,
+ever again, once the qrels file exists:
+
+| Config | Precision | Recall | F1 |
+|---|---|---|---|
+| Contextual headers, no cross-reference boost | 0.356 | 0.676 | **0.427** |
+| Contextual headers + cross-reference boost (current default) | 0.295 | 0.698 | **0.389** |
+
+This is a clean, deterministic re-derivation of Step 13's expensive,
+judged finding — the boost trades precision for a small recall gain, and the
+net F1 effect is negative — obtained this time for free, from pure set
+arithmetic, and now re-runnable for any future retrieval change without
+spending another judging round. Recorded in Langfuse as
+`phase3-hybrid-fixed500-ctxheaders-crossrefboost-precisionrecall-qrels` and
+`phase3-hybrid-fixed500-ctxheaders-noboost-precisionrecall-qrels`.
+
+**Also revealed, independent of the boost question:** even the *better*
+(no-boost) configuration only reaches 0.356 precision — meaning roughly two
+out of every three chunks the pipeline retrieves, on average, aren't
+actually relevant to the question asked. This wasn't visible in any prior
+metric (Retrieval Hit and Chunk-Level Hit only check "is at least one
+relevant chunk present," never "how much of what came back was noise").
+This is a new, general finding about the pipeline's precision — not
+specific to the cross-reference boost — worth investigating on its own.
+
 ## 4. Pass-rate timeline at a glance
 
 | Stage | Checks used | Overall pass rate |
@@ -738,9 +802,20 @@ question). No config change made yet — this step is measurement only.
 | + GDPR cross-reference boost (keyword-triggered) | retrieval-hit only | 39/41 hit rate (95.1%), zero regressions |
 | + Corpus-side cross-reference tagging (generalizes the above) | retrieval-hit only | **40/41 hit rate (97.6%) — new best** |
 | Same boost, judged by Claude Sonnet 5 on the 15 questions it affects | independent judge, 6 metrics, boost-affected questions only | Retrieval Hit 73.3%→100%, Chunk-Level Hit 66.7%→93.3% (both up); **Answer Correctness 0.803→0.760, Citation Accuracy 0.617→0.510 (both down)** — mixed result, see Step 13 |
+| First true Precision/Recall (qrels-based), no boost | deterministic, pooled relevance judgments | Precision 0.356, Recall 0.676, **F1 0.427** |
+| Same, with cross-reference boost | deterministic, pooled relevance judgments | Precision 0.295, Recall 0.698, **F1 0.389 — confirms Step 13's finding for free, deterministically** |
 
 ## 5. What's still open
 
+- **Investigate the pipeline's low precision, independent of the boost
+  question** (Step 14, new) — even the better (no-boost) config only
+  reaches 0.356 precision, meaning roughly 2 of every 3 retrieved chunks
+  aren't actually relevant. No prior metric could see this. Worth its own
+  investigation, separate from the boost's own precision problem.
+- **Re-run `eval/compute_retrieval_metrics.py` after any future retrieval
+  change** (Step 14) — it's now free (no LLM judging) and gives real
+  Precision/Recall/F1 immediately, so there's no reason to skip it before
+  deciding whether a change is worth keeping.
 - **Run recursive chunking through the same Groq-based 6-check harness** used for
   Step 4, so it can be directly compared to the 24/41 reference point on equal
   footing (Step 6 changed the judge and the chunking strategy at once).
@@ -766,7 +841,10 @@ question). No config change made yet — this step is measurement only.
   the 9 non-cross-reference questions it touches, alongside 4 genuine wins on
   actual cross-reference questions. Candidate fixes: only trigger from a
   top-1/top-2 ranked chunk's tag (not any of the top-5), or only credit a
-  boosted document in citations if the answer actually uses it.
+  boosted document in citations if the answer actually uses it. **Now
+  verifiable deterministically** — Step 14's qrels-based
+  `eval/compute_retrieval_metrics.py` can check any candidate fix's real
+  Precision/Recall/F1 immediately, without needing another judging round.
 - **Even the generalized (Step 12) boost still requires a retrieved chunk to
   explicitly name the other document** — verified directly (see Step 12). A
   question whose best-matching chunks never happen to name the cross-referenced
