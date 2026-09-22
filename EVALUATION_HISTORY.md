@@ -290,7 +290,90 @@ document.
 **Not yet tried:** contextual headers combined with recursive chunking (would
 need regenerating the header export against recursive chunk boundaries first,
 since headers are keyed by chunk index and the two chunkers produce different
-boundaries) — a plausible next stacking win, not yet measured.
+boundaries) — parked at the user's request until remaining tasks are done.
+
+### Step 8 — External LLM-as-judge (Claude Sonnet 5) on a targeted 15-question hard subset
+
+Rather than spend a full 41-question judge pass on the contextual-headers
+pipeline, judged a **targeted hard subset**: every cross-reference (8),
+multi-hop (3), and temporal-conflict (2) question — 13 structurally hard by
+the golden set's own label — plus the 2 single-hop questions that still miss
+the Groq-free retrieval-hit check (Step 7) — **15 questions**. This follows
+the spec's Tier 0/1/2 cost cascade: cheap/free checks first, expensive judging
+reserved for what's still uncertain, rather than re-judging the ~27
+already-easy single-hop questions every prior full-set run confirms are fine.
+
+Mechanics: `eval/export_hard_subset_for_external_judge.py` ran the live
+pipeline (hybrid retrieval + contextual headers, one Groq generation call per
+question) and wrote `eval/hard_subset_outputs_for_external_judge.jsonl`.
+Claude Sonnet 5 judged it externally per `eval/HARD_SUBSET_JUDGE_INSTRUCTIONS.md`,
+returning `eval/hard_subset_judge_scores.jsonl` — the rubric adds two metrics
+to Step 6's set, both aimed at Step 6's own open findings: `chunk_level_hit`
+(does a retrieved chunk contain the actual needed fact, not just the right
+document?) and `citation_accuracy` (do citations reflect real support, or just
+echo the retrieved set?).
+
+**Overall results (N=15, the hard subset only — not comparable to full-set
+percentages above):**
+
+| Metric | Value |
+|---|---|
+| Retrieval Hit (doc-level) | 10/15 (67%) |
+| Chunk-Level Hit | 10/15 (67%) — but a *different* 10 (see below) |
+| MRR | 0.550 |
+| Faithfulness | 0.803 |
+| Answer Correctness | 0.600 |
+| Citation Accuracy | 0.513 |
+| Outcome distribution | Correct 2, Correct-Partial 5, Correct-Condensed 1 (→ 8/15, 53% fully/mostly correct) · Partial 4 · Task-Fail 1 · Abstained-Justified 1 · Incorrect 1 |
+
+Lower than Step 6's full-set 71%/83% figures **by design** — this is the
+hardest 15 questions in the golden set, not a regression.
+
+**Key findings — new, concrete, and actionable:**
+
+1. **Doc-level retrieval-hit both over- and under-counts correctness, in
+   opposite directions, on the same 15 questions.** 2 cases (of 10 doc-level
+   "hits") retrieved the right document but the wrong chunk — confirming Step
+   6's finding 2 again. But separately, 2 cases the automated check counts as
+   *misses* actually had the needed fact available anyway, verbatim, in a
+   *different* retrieved document (e.g. the Digital Omnibus's recital text
+   quotes the very AI Act date it supersedes) — a **false negative** in
+   doc-path-based scoring that Step 6 didn't surface. Net: document-path
+   matching is noisier in both directions than a single "hit rate" number
+   suggests.
+2. **GDPR cross-reference retrieval is inconsistent, not uniformly weak.** Of
+   6 GDPR cross-reference questions in this subset, 3 retrieved zero GDPR
+   chunks at all (CV-screening/health-data, special-category recruitment bias,
+   chatbot Art.50/GDPR-notice), while the other 3 retrieved GDPR cleanly and
+   scored well (Art.22 automated-decision rights, Art.35 DPIA, Art.9 biometric
+   data). The pattern: GDPR retrieval succeeds when the question names a
+   specific mechanism (DPIA, automated decision-making) but fails when the
+   question is a scenario needing the model to infer *which* GDPR concept
+   applies — a harder retrieval-relevance problem than simple term matching.
+3. **A confidently wrong statutory citation, self-inconsistent with an
+   adjacent question.** Asked where the Article 53(1)(a)/(b) open-source
+   exemption is written, one answer confidently cites Article 54(6) (a real,
+   verbatim, but *substantively different* provision — the authorised-
+   representative exemption, not the open-source one) as if it matches the
+   Service Desk's description. A near-duplicate question two rows later
+   correctly identifies Article 53(2) instead and correctly distinguishes it
+   from Article 54(6) — the same self-inconsistency pattern Step 6 found,
+   this time with a wrong legal citation as the consequence, the single most
+   serious error in this subset for a compliance-facing tool.
+4. **Citation accuracy remains low (0.513 mean) and is the most consistently
+   weak metric** — nearly every record's comment notes citations listing
+   documents that weren't actually used, confirming Step 6's finding 1 persists
+   under contextual headers.
+5. **Generation-stage failures happen even with perfect retrieval.** One
+   question retrieved the exact answer at rank 1, verbatim, yet the generated
+   answer addressed a different, unrelated question entirely using lower-ranked
+   chunks — a pure generation-stage miss, not a retrieval problem, and the
+   lowest answer-correctness score in the subset (0.05) despite `mrr=1.0`.
+6. **Boilerplate/navigation noise still wastes retrieval slots** — one Service
+   Desk chunk retrieved for a question was pure site-navigation text with no
+   substantive content, confirming Step 6's finding 7 is still present after
+   contextual headers were added (headers describe the boilerplate-heavy
+   chunk accurately, but don't remove the boilerplate itself).
 
 ## 4. Pass-rate timeline at a glance
 
@@ -304,6 +387,7 @@ boundaries) — a plausible next stacking win, not yet measured.
 | + Recursive chunking (Groq-free screen only) | retrieval-hit only | 34/41 hit rate (83%) |
 | + Recursive chunking, judged by Claude Sonnet 5 | independent judge, 6 metrics | 34/41 doc-recall (83%, confirms the screen); 29/41 (71%) fully/mostly correct by outcome label |
 | + Contextual chunk headers (fixed chunking + hybrid) | retrieval-hit only | **36/41 hit rate (87.8%) — new best** |
+| + Contextual headers, judged by Claude Sonnet 5 on hard 15-question subset | independent judge, 6 metrics, hardest questions only | 10/15 doc-recall (67%); 8/15 (53%) fully/mostly correct by outcome label — not comparable to full-set % above |
 
 ## 5. What's still open
 
@@ -313,16 +397,26 @@ boundaries) — a plausible next stacking win, not yet measured.
 - **Implement claim-level citation attribution** (Finding 1) — citations
   currently just echo the retrieved set rather than reflecting what actually
   supports the answer.
-- **Add a chunk-level recall metric**, not just document-level (Finding 2) — the
-  biggest measured driver of the gap between retrieval-hit-rate and
-  answer-correctness.
+- **Add a chunk-level recall metric**, not just document-level (Finding 2,
+  reconfirmed in Step 8 finding 1) — the biggest measured driver of the gap
+  between retrieval-hit-rate and answer-correctness. Step 8 also found the
+  reverse failure mode (doc-path scoring false negatives), so this metric
+  needs to handle both directions, not just tighten the existing one.
 - **Strip navigation/boilerplate at ingestion** for Service Desk article chunks
-  (Finding 7) — cheap, mechanical, and currently diluting context precision.
-- Consider a self-consistency check across paraphrased queries (Finding 4).
-- **Contextual headers not yet judged on the full 6-check Groq/Sonnet harness**
-  — Step 7 only ran the Groq-free retrieval-hit screen, same caveat as Step 5
-  had before Step 6.
-- Contextual headers + recursive chunking stacked together — not yet tried.
+  (Finding 7, reconfirmed in Step 8 finding 6) — cheap, mechanical, and
+  currently diluting context precision even with contextual headers on.
+- Consider a self-consistency check across paraphrased queries (Finding 4,
+  reconfirmed sharply in Step 8 finding 3 — this time producing a wrong
+  statutory citation, the most consequential error found so far).
+- **Investigate inconsistent GDPR cross-reference retrieval** (Step 8 finding
+  2, new) — succeeds for named mechanisms (DPIA, Art. 22), fails for
+  scenario-phrased questions needing inference to the right GDPR concept.
+- Contextual headers judged on the full 41-question 6-check harness — Step 8
+  intentionally judged only the 15-question hard subset (cheaper, targeted);
+  the easier ~26 single-hop questions are not yet re-judged under headers,
+  though the Groq-free screen (Step 7) covers all 41.
+- Contextual headers + recursive chunking stacked together — parked at the
+  user's request until remaining tasks are complete.
 - Phase 4 (ingestion sophistication — effective-date metadata, cross-reference
   linking) not started; the retrieval-hit misses (Digital-Omnibus-adjacent and
   cross-reference questions) remain the concrete targets, now with two

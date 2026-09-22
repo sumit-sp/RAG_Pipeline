@@ -68,6 +68,44 @@ def _load_claude_judge_records() -> dict[str, dict]:
     return records
 
 
+def _load_hard_subset_judge_records() -> dict[str, dict]:
+    """Combines hard_subset_outputs_for_external_judge.jsonl (real generated
+    answers, contextual-headers pipeline) with hard_subset_judge_scores.jsonl
+    (Claude Sonnet 5's judge scores) for the 15-question hard subset only —
+    the other 26 golden-set questions get no score/output for this run."""
+    outputs = {}
+    for line in (EVAL_DIR / "hard_subset_outputs_for_external_judge.jsonl").read_text(
+        encoding="utf-8"
+    ).splitlines():
+        if not line.strip():
+            continue
+        rec = json.loads(line)
+        outputs[rec["question"]] = rec["generated_answer"]
+
+    records = {}
+    for line in (EVAL_DIR / "hard_subset_judge_scores.jsonl").read_text(
+        encoding="utf-8"
+    ).splitlines():
+        if not line.strip():
+            continue
+        rec = json.loads(line)
+        question = rec["question"]
+        scores = {
+            "Retrieval Hit": 1.0 if rec["retrieval_hit"] else 0.0,
+            "Chunk-Level Hit": 1.0 if rec["chunk_level_hit"] else 0.0,
+            "MRR": rec["mrr"],
+            "Faithfulness": rec["faithfulness"],
+            "Answer Correctness": rec["answer_correctness"],
+            "Citation Accuracy": rec["citation_accuracy"],
+        }
+        records[question] = {
+            "output": outputs.get(question),
+            "scores": scores,
+            "comment": f"{rec['outcome_label']} — {rec['comment']}",
+        }
+    return records
+
+
 def backfill_run(client: Langfuse, dataset, run_name: str, description: str, records: dict[str, dict]) -> None:
     def task(*, item, **kwargs):
         rec = records.get(item.input)
@@ -123,6 +161,11 @@ def main() -> None:
             "phase3-claude-judge-hybrid-recursive",
             "Phase 3: hybrid search + recursive chunking, judged independently by Claude Sonnet 5 (not Groq). 83% doc-level retrieval recall - confirms the Groq-free screen.",
             _load_claude_judge_records(),
+        ),
+        (
+            "phase3-contextual-headers-hard-subset-judged",
+            "Phase 3 Step 8: hybrid search + contextual chunk headers, judged by Claude Sonnet 5 on a targeted 15-question hard subset (cross-reference/multi-hop/temporal-conflict + known retrieval misses), not the full 41. 67% doc-recall, 53% fully/mostly correct on this hardest-question subset -- not comparable to other runs' full-set percentages.",
+            _load_hard_subset_judge_records(),
         ),
     ]
 
