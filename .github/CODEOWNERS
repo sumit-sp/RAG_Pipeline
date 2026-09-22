@@ -1,0 +1,4 @@
+# Required so the "require_code_owner_review" rule on master has someone
+# who can actually satisfy it (a ruleset naming a code-owner reviewer with
+# no CODEOWNERS file is otherwise unsatisfiable by anyone).
+* @sumit-sp
