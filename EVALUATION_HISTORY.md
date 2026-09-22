@@ -40,6 +40,21 @@ trusting a single decimal place:** identical-config re-runs show real score
 variance of ~0.05–0.07 per metric, because served LLM inference isn't bit-exact
 even at `temperature=0`. Treat the overall pass count as the trustworthy signal.
 
+**A second, smaller noise source found later (Step 14 follow-up, migrating to
+Qdrant Cloud):** retrieval itself can also be non-deterministic at the margin,
+independent of any LLM. Repeated identical queries against the same Qdrant
+collection occasionally returned a different chunk in the last retrieved slot.
+Root cause: RRF (reciprocal rank fusion) scores are coarse, quantized values
+(1.0, 0.5, 0.333, 0.25, ...), so exact ties at the top-k cutoff boundary are
+common, and which tied chunk wins isn't always stable across calls. Confirmed
+this is not a local-vs-cloud difference — 3 repeated calls against the same
+cloud cluster for the same question gave 2 different outcomes. Measured
+impact: comparing `eval/compute_retrieval_metrics.py` on local vs. Qdrant
+Cloud gave near-identical aggregates (Precision 0.295 vs. 0.298, Recall 0.698
+vs. 0.707) with exactly one question's hit count differing by one chunk. Small,
+but worth knowing before reading a single question's Precision/Recall as
+exact.
+
 ## 2. Starting point: the naive baseline
 
 **Architecture (Phase 1, "the dumbest complete pipeline"):**
