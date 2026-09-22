@@ -2,6 +2,12 @@
 
 ## Phase 3
 
+### Building a real qrels file: pooling, not exhaustive judging
+User asked why we weren't calculating classic retriever Precision@k/Recall@k. Answer: because none of our metrics are judged against an exhaustive list of every relevant chunk per question — only a single `expected_source_doc` pointer in `golden_set.jsonl`. Decided to build a proper relevance-judgment set ("qrels," standard IR terminology) to close this gap.
+**Chose pooling over exhaustive judging:** judging all 837 corpus chunks against all 41 questions is ~34,000 judgments — intractable, and not how real-world IR relevance sets get built anyway. Instead, `eval/export_candidates_for_qrels.py` builds each question's candidate pool as the union of the top-20 results from 4 independent methods (dense-only, sparse-only, hybrid, and the live pipeline with all current boosts) — no LLM calls, pure retrieval mechanics. Mean pool size 33.4 chunks/question (1369 total).
+**Trade-off accepted, stated for the record:** recall computed against this file is bounded by the pool, not the full corpus — a relevant chunk none of the 4 methods ever surfaces is invisible to it. This is the accepted standard trade-off in real-world IR evaluation (TREC-style pooling), not a shortcut unique to this project.
+**Split into 7 batches** (`eval/split_qrels_candidates.py`, ~500-625KB each) rather than one ~4MB file, so each can be judged carefully by Sonnet-5 in one sitting instead of skimmed. Rubric (`eval/QRELS_JUDGE_INSTRUCTIONS.md`) explicitly defines relevance strictly — "would this chunk actually be used to construct the answer," not topical proximity — directly informed by Step 13's finding that the cross-reference boost caused real harm by conflating the two.
+
 ### Cross-reference boost judged: a real, mixed result — not yet fixed
 Sonnet-5 judged the 15 questions the Step 12 boost affects against their existing Step 10 (pre-boost) scores — a clean before/after on the same questions. Retrieval improved unambiguously (Retrieval Hit 73.3%→100%, Chunk-Level Hit 66.7%→93.3%), but **Answer Correctness (0.803→0.760) and Citation Accuracy (0.617→0.510) both got worse on average**. Full write-up: `EVALUATION_HISTORY.md` Step 13.
 **The good:** 4 genuine wins where the boost fixed exactly what it was built for — e.g. the CV-screening GDPR question jumped 0.35→0.65 as GDPR special-category rules were finally grounded instead of hand-waved.
