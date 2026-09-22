@@ -13,6 +13,7 @@ import openpyxl
 from langfuse import Langfuse
 
 from app.core import config
+from eval.pipeline_metadata import build_pipeline_metadata
 
 DATASET_NAME = "eu-ai-act-golden-set"
 EVAL_DIR = Path(__file__).parent
@@ -106,7 +107,14 @@ def _load_hard_subset_judge_records() -> dict[str, dict]:
     return records
 
 
-def backfill_run(client: Langfuse, dataset, run_name: str, description: str, records: dict[str, dict]) -> None:
+def backfill_run(
+    client: Langfuse,
+    dataset,
+    run_name: str,
+    description: str,
+    records: dict[str, dict],
+    metadata_overrides: dict,
+) -> None:
     def task(*, item, **kwargs):
         rec = records.get(item.input)
         return rec["output"] if rec else None
@@ -126,6 +134,7 @@ def backfill_run(client: Langfuse, dataset, run_name: str, description: str, rec
         description=description,
         task=task,
         evaluators=[evaluator],
+        metadata=build_pipeline_metadata(metadata_overrides),
     )
     print(f"  -> {run_name}: {len(result.item_results)} items")
 
@@ -143,35 +152,40 @@ def main() -> None:
 
     runs = [
         (
-            "phase2-dense-baseline",
+            "phase2-dense-only-fixed500-baseline-27of41",
             "Phase 2 baseline: dense-only retrieval, fixed 500/50 chunking, post-bugfix. 27/41 (66%) on 4 pipeline metrics.",
             _load_score_records(EVAL_DIR / "eval_run_raw_results_dense.jsonl"),
+            {"retrieval_mode": "dense", "qdrant_collection": "ai_act_corpus"},
         ),
         (
-            "phase3-hybrid-reranked-reverted",
+            "phase3-hybrid-fixed500-reranked-REVERTED-26of41",
             "Phase 3: hybrid search + cross-encoder reranking. REVERTED - pass rate dropped to 26/41 despite 2 of 4 metrics improving on average.",
             _load_score_records(EVAL_DIR / "eval_run_raw_results_hybrid_rerank.jsonl"),
+            {"retrieval_mode": "hybrid", "use_reranking": True, "qdrant_collection": "ai_act_corpus_hybrid"},
         ),
         (
-            "phase3-hybrid-6checks-reference",
+            "phase3-hybrid-fixed500-reference-24of41",
             "Phase 3 current reference point: hybrid search (kept), fixed 500/50 chunking, all 6 checks (4 pipeline + retrieval-hit + answer-correctness). 24/41 (59%).",
             _load_score_records(EVAL_DIR / "eval_run_raw_results_hybrid.jsonl"),
+            {"retrieval_mode": "hybrid", "qdrant_collection": "ai_act_corpus_hybrid"},
         ),
         (
-            "phase3-claude-judge-hybrid-recursive",
+            "phase3-hybrid-recursive500-sonnet5judged-34of41",
             "Phase 3: hybrid search + recursive chunking, judged independently by Claude Sonnet 5 (not Groq). 83% doc-level retrieval recall - confirms the Groq-free screen.",
             _load_claude_judge_records(),
+            {"retrieval_mode": "hybrid", "chunking_strategy": "recursive", "qdrant_collection": "ai_act_corpus_recursive_hybrid"},
         ),
         (
-            "phase3-contextual-headers-hard-subset-judged",
+            "phase3-hybrid-fixed500-ctxheaders-sonnet5judged-hard15-10of15",
             "Phase 3 Step 8: hybrid search + contextual chunk headers, judged by Claude Sonnet 5 on a targeted 15-question hard subset (cross-reference/multi-hop/temporal-conflict + known retrieval misses), not the full 41. 67% doc-recall, 53% fully/mostly correct on this hardest-question subset -- not comparable to other runs' full-set percentages.",
             _load_hard_subset_judge_records(),
+            {"retrieval_mode": "hybrid", "use_contextual_headers": True, "qdrant_collection": "ai_act_corpus_hybrid"},
         ),
     ]
 
     print(f"Backfilling {len(runs)} historical experiment runs into dataset '{DATASET_NAME}':")
-    for run_name, description, records in runs:
-        backfill_run(client, dataset, run_name, description, records)
+    for run_name, description, records, metadata_overrides in runs:
+        backfill_run(client, dataset, run_name, description, records, metadata_overrides)
 
     client.flush()
     print("Done.")

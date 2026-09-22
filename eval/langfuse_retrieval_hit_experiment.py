@@ -7,23 +7,37 @@ DECISIONS.md. Use this for any new chunking/retrieval config change that only
 needs the retrieval-hit signal, so the Compare Experiments view stays current
 without waiting for a full Groq/Sonnet-judged run.
 
-Run with: python -m eval.langfuse_retrieval_hit_experiment <run_name> <description>
+Every run attaches a full pipeline-config snapshot (chunking, retrieval mode,
+embedding model/dimension, etc. — see eval/pipeline_metadata.py) as Langfuse
+run metadata, so the Compare Experiments view is self-describing.
+
+Run with: python -m eval.langfuse_retrieval_hit_experiment <run_name> <description> [metadata_overrides_json]
+
+metadata_overrides_json is optional — pass it when the live config flag
+doesn't reflect what's actually baked into the collection (e.g.
+USE_CONTEXTUAL_HEADERS only affects ingestion, not retrieval), e.g.:
+  python -m eval.langfuse_retrieval_hit_experiment my-run "..." '{"use_contextual_headers": true}'
 """
 
+import json
 import sys
 
 from langfuse import Langfuse
 
 from app.core import config
 from app.pipelines.plain.retrieval import PlainRetriever
+from eval.pipeline_metadata import build_pipeline_metadata
 
 DATASET_NAME = "eu-ai-act-golden-set"
 
 
 def main() -> None:
-    if len(sys.argv) != 3:
-        raise SystemExit("Usage: python -m eval.langfuse_retrieval_hit_experiment <run_name> <description>")
+    if len(sys.argv) not in (3, 4):
+        raise SystemExit(
+            "Usage: python -m eval.langfuse_retrieval_hit_experiment <run_name> <description> [metadata_overrides_json]"
+        )
     run_name, description = sys.argv[1], sys.argv[2]
+    overrides = json.loads(sys.argv[3]) if len(sys.argv) == 4 else None
 
     if not (config.LANGFUSE_PUBLIC_KEY and config.LANGFUSE_SECRET_KEY):
         raise RuntimeError("LANGFUSE_PUBLIC_KEY/LANGFUSE_SECRET_KEY not set in .env")
@@ -50,6 +64,7 @@ def main() -> None:
         description=description,
         task=task,
         evaluators=[evaluator],
+        metadata=build_pipeline_metadata(overrides),
     )
     print(f"-> {run_name}: {len(result.item_results)} items")
     client.flush()
