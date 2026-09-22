@@ -22,13 +22,22 @@ jobs:
         env:
           EMBEDDING_BACKEND: local
           RETRIEVAL_MODE: hybrid
+          USE_CONTEXTUAL_HEADERS: "true"
 
       # Groq-free, deterministic, no API key needed — see DECISIONS.md
       # ("Groq restricted to generation only"). Full LLM-judged quality eval
       # (faithfulness, answer correctness, etc.) is a separate manual process
       # via eval/export_for_external_judge.py, not run in CI.
+      #
+      # USE_CONTEXTUAL_HEADERS must match the ingestion step above: headers
+      # are baked into the embedded text at ingestion time, not applied at
+      # query time, so this step doesn't strictly need the flag to retrieve
+      # correctly — it's set here anyway so the two steps' config can never
+      # silently drift apart again (this exact drift caused a CI regression,
+      # see EVALUATION_HISTORY.md).
       - name: Run retrieval-hit regression check
         run: pytest eval/test_retrieval_hit.py -v
         env:
           EMBEDDING_BACKEND: local
           RETRIEVAL_MODE: hybrid
+          USE_CONTEXTUAL_HEADERS: "true"

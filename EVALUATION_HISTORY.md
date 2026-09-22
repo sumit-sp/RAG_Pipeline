@@ -800,6 +800,32 @@ relevant chunk present," never "how much of what came back was noise").
 This is a new, general finding about the pipeline's precision — not
 specific to the cross-reference boost — worth investigating on its own.
 
+### Step 15 — Fixed a real CI bug: `.github/workflows/eval.yml` never enabled contextual headers
+
+CI's Groq-free retrieval-hit check (`eval/test_retrieval_hit.py`, gated at
+93% since Step 12) started failing at **68.3% (28/41)**. Root cause:
+contextual chunk headers are applied at *ingestion* time, prepended to each
+chunk's text before embedding
+(`app/pipelines/plain/ingestion.py`), gated by `USE_CONTEXTUAL_HEADERS`
+(default `false`). The workflow's ingestion step only ever set
+`EMBEDDING_BACKEND` and `RETRIEVAL_MODE`, never `USE_CONTEXTUAL_HEADERS` —
+and `.env` doesn't set it either, since it was only ever exported inline on
+the shell for the one-off re-ingestion that built Step 7's corpus. So every
+CI run had been silently rebuilding a **headerless** corpus from scratch
+and testing it against a 93% floor that assumes headers are on — the
+entire 76%→97.6% climb across Steps 7-12 depends on them. The 13 CI
+failures were almost all exactly the class of question (GPAI Code of
+Practice chapters, Article 50 guidelines, GPAI-scope guidelines) that
+headers were shown to fix in Step 7, confirming the mechanism.
+
+**Fix:** added `USE_CONTEXTUAL_HEADERS: "true"` to both the ingestion and
+test steps' env in `eval.yml`. No new external dependency — the
+precomputed `eval/contextual_headers.jsonl` (837 lines) is already
+committed to the repo, so CI needs nothing it didn't already have. This is
+a CI-config bug, not a retrieval regression: the actual pipeline (and the
+Qdrant Cloud collection it serves from) was never affected, only CI's own
+from-scratch ingestion inside each run.
+
 ## 4. Pass-rate timeline at a glance
 
 | Stage | Checks used | Overall pass rate |
