@@ -121,37 +121,9 @@ Scores each question in `eval/golden_set.jsonl` on faithfulness, answer relevanc
 
 Note: `deepeval test run eval/run_eval.py` (DeepEval's own CLI wrapper) is what CI uses, but it hangs indefinitely on at least one network we tested from (looks like a blocked telemetry call) — plain `pytest` runs the identical suite and is what's used for local development.
 
-## Deployment guide (Render or Railway)
+## Deployment guide
 
-**Not yet done for this project** (tracked in `PROGRESS.md`) — these are the steps to follow when ready, for whoever ends up deploying it.
-
-**Prerequisites:**
-- Code pushed to a GitHub repo (Render/Railway both deploy via GitHub-connected auto-deploy)
-- A Groq API key, added as a secret/env var on the platform (never commit it)
-
-**Important caveat — the embedded Qdrant mode:** local dev uses `qdrant-client`'s on-disk mode, which writes to the container's local filesystem. Most PaaS free tiers (Render, Railway) use **ephemeral disks** — that data is wiped on every redeploy/restart. Two options:
-1. **Simplest for a demo:** re-run ingestion as part of every deploy (see build command below), so the index rebuilds fresh each time. Fine for an 8-document corpus that ingests in well under a minute.
-2. **More production-realistic:** point `QDRANT_URL` at a persistent Qdrant (Qdrant Cloud's free tier, or a Qdrant instance on a platform with a persistent volume/disk) so the index survives redeploys and doesn't need re-ingesting on every deploy.
-
-### Deploying the API (Render)
-1. Push this repo to GitHub.
-2. Render dashboard → New → Web Service → connect the GitHub repo.
-3. Build command: `pip install -r requirements.txt && python -m app.pipelines.plain.ingestion` (see caveat above; drop the ingestion part if using option 2).
-4. Start command: `uvicorn app.api.main:app --host 0.0.0.0 --port $PORT`
-5. Add environment variables in the Render dashboard: `GROQ_API_KEY`, `GENERATION_MODEL`, `EMBEDDING_BACKEND=local`, `PIPELINE_BACKEND=plain`, and `QDRANT_URL` if using option 2.
-6. Deploy, then note the public URL Render assigns.
-
-### Deploying the demo (Render, second service)
-1. Same repo, new Render Web Service.
-2. Build command: `pip install -r requirements.txt`
-3. Start command: `streamlit run demo/app.py --server.port $PORT --server.address 0.0.0.0`
-4. Environment variable: `API_URL=<the FastAPI service's public URL from above>`
-
-### Railway
-Same shape, different dashboard: New Project → Deploy from GitHub repo → Railway auto-detects Python; set the same build/start commands and environment variables per service in the Railway dashboard. Deploy the API and the demo as two separate services within the same Railway project, same `API_URL` wiring as above.
-
-### GitHub Actions CI
-Once pushed to GitHub, add `GROQ_API_KEY` as a repository secret (Settings → Secrets and variables → Actions) so `.github/workflows/eval.yml` can run the eval suite on every push.
+**Not yet done for this project** (tracked in `PROGRESS.md`). Full step-by-step instructions — environment variables, Render/Railway steps, the ephemeral-vs-persistent Qdrant trade-off, Langfuse Cloud setup, and a known CI gap — are in **[`DEPLOYMENT.md`](DEPLOYMENT.md)**, kept current with whatever the validated best pipeline config actually is (currently: hybrid retrieval + contextual chunk headers + the cross-reference boost — see `EVALUATION_HISTORY.md`).
 
 ## Results so far
 
