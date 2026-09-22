@@ -2,6 +2,12 @@
 
 ## Phase 3
 
+### Full 41-question judging: extends, doesn't replace, the hard-subset round
+User asked to extend Step 8's hard-subset judging to all 41 questions for a complete comparable picture. `eval/export_contextual_headers_full_for_external_judge.py` re-ran the live pipeline for all 41 (contextual headers + hybrid + fixed chunking); Claude Sonnet 5 judged it per `eval/CONTEXTUAL_HEADERS_FULL_JUDGE_INSTRUCTIONS.md` (same rubric as Step 8), returning `eval/contextual_headers_full_judge_scores.jsonl`. Result: 36/41 (87.8%) doc-recall — an exact match with the Groq-free screen (Step 7) — and 34/41 (82.9%) fully/mostly correct, the best full-set outcome-distribution result of any judged run so far. Full write-up: `EVALUATION_HISTORY.md` Step 10.
+**Confirms the Step 8 targeting strategy was sound:** the 26 single-hop questions judged here for the first time score 0.950 answer-correctness — as good as the retrieval-hit screen implied — so concentrating judging effort on cross-reference/multi-hop/temporal-conflict questions wasn't hiding a single-hop problem.
+**New finding:** two Article 50 transparency-guidelines questions both miss the same specific passage (paragraph 38) — chunks cover paragraphs 34-37 but stop just short of it. Flagged as a likely chunk-boundary issue for that document, not yet investigated.
+**Backfilled into Langfuse** as `phase3-hybrid-fixed500-ctxheaders-sonnet5judged-full-34of41`, alongside the existing 6 runs, with full pipeline-config metadata attached.
+
 ### Hard-subset judging: 15 targeted questions, not the full 41
 User directive: instead of a full 41-question LLM-as-judge pass on the contextual-headers pipeline (Groq-costly in review effort even when judged externally by Sonnet-5), select ~15 "fairly difficult" questions and judge those. Selected every cross-reference (8), multi-hop (3), and temporal-conflict (2) question — 13 structurally hard by the golden set's own difficulty label — plus the 2 single-hop questions that still miss the automated retrieval-hit check against the contextual-headers index (see `EVALUATION_HISTORY.md` Step 7) — 15 total.
 **Why:** targets judging effort at questions actually likely to fail rather than spreading it evenly across mostly-easy single-hop questions, which is also directly in the spirit of the spec's "Tier 0/1/2 cascade" evaluation-cost strategy (cheap/free checks first, expensive judging reserved for what's still uncertain).

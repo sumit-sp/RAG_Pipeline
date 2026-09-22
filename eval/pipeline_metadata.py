@@ -13,17 +13,25 @@ from app.pipelines.plain.vector_store import get_qdrant_client
 
 def _embedding_dimension(collection: str | None = None) -> int | None:
     """Reads the dense vector size straight from a live Qdrant collection,
-    rather than instantiating the embedding model just to check its dimension."""
-    client = get_qdrant_client()
+    rather than instantiating the embedding model just to check its dimension.
+
+    Opens its own short-lived client and closes it immediately -- the local
+    (embedded, on-disk) Qdrant mode takes an exclusive file lock per client
+    instance, so leaving this one open would collide with any other client
+    (e.g. a retriever's) the calling script also needs in the same process."""
     collection = collection or config.collection_name()
-    if not client.collection_exists(collection):
-        return None
-    info = client.get_collection(collection)
-    vectors = info.config.params.vectors
-    if isinstance(vectors, dict):  # hybrid: named "dense"/"sparse" vectors
-        dense = vectors.get("dense")
-        return dense.size if dense else None
-    return vectors.size if vectors else None  # dense-only: single unnamed vector
+    client = get_qdrant_client()
+    try:
+        if not client.collection_exists(collection):
+            return None
+        info = client.get_collection(collection)
+        vectors = info.config.params.vectors
+        if isinstance(vectors, dict):  # hybrid: named "dense"/"sparse" vectors
+            dense = vectors.get("dense")
+            return dense.size if dense else None
+        return vectors.size if vectors else None  # dense-only: single unnamed vector
+    finally:
+        client.close()
 
 
 def build_pipeline_metadata(overrides: dict | None = None) -> dict:

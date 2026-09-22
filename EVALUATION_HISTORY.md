@@ -457,6 +457,77 @@ metadata-filtered secondary retrieval pass specifically over the
 adjacent/GDPR sub-collection for cross-reference questions. No config change
 made yet — this step is diagnostic only.
 
+### Step 10 — External LLM-as-judge (Claude Sonnet 5) on the full 41-question set
+
+Extended Step 8's judging from the 15-question hard subset to **all 41**
+questions, so the full picture is directly comparable rather than
+deliberately skewed toward the hardest tail. Mechanics:
+`eval/export_contextual_headers_full_for_external_judge.py` ran the live
+pipeline (hybrid retrieval + contextual headers) for all 41 questions and
+wrote `eval/contextual_headers_full_outputs_for_external_judge.jsonl`; Claude
+Sonnet 5 judged it per `eval/CONTEXTUAL_HEADERS_FULL_JUDGE_INSTRUCTIONS.md`
+(same 6-metric rubric as Step 8), returning
+`eval/contextual_headers_full_judge_scores.jsonl`. For the 15 questions
+already judged in Step 8, the judge reproduced its earlier scores rather than
+re-litigating them (regenerated answers differed only in wording, not
+substance) — so Step 10's numbers are a strict superset, not a re-roll.
+
+**Overall results (N=41):**
+
+| Metric | Value |
+|---|---|
+| Retrieval Hit (doc-level) | 36/41 (87.8%) — **exact match** with the Groq-free screen (Step 7) |
+| Chunk-Level Hit | 34/41 (82.9%) |
+| MRR | 0.715 |
+| Faithfulness | 0.909 |
+| Answer Correctness | 0.828 |
+| Citation Accuracy | 0.663 |
+| Outcome distribution | Correct 23, Correct-Partial 10, Correct-Condensed 1 (→ 34/41, 82.9% fully/mostly correct) · Partial 4 · Task-Fail 1 · Abstained-Justified 1 · Incorrect 1 |
+
+The 36/41 doc-level figure being an exact match with the Groq-free
+retrieval-hit screen (Step 7) is the same kind of independent cross-check
+Step 6 found for recursive chunking — two different measurement methods
+agreeing gives real confidence contextual headers' retrieval win is genuine,
+not a screening artifact.
+
+82.9% fully/mostly correct is the best outcome-distribution result of any
+full-set judged run so far (Step 6's recursive-chunking run was 71%).
+
+**By difficulty:**
+
+| Difficulty | n | Retrieval Hit | Chunk-Level Hit | Faithfulness | Answer Correctness |
+|---|---|---|---|---|---|
+| single-hop | 28 | 26/28 (93%) | 26/28 (93%) | 0.971 | 0.950 |
+| cross-reference | 8 | 6/8 (75%) | 6/8 (75%) | 0.769 | 0.669 |
+| multi-hop | 3 | 2/3 (67%) | 1/3 (33%) | 0.683 | 0.633 |
+| temporal-conflict | 2 | 2/2 (100%) | 1/2 (50%) | 0.925 | 0.050 |
+
+Single-hop is now excellent across the board (0.950 answer correctness) —
+**confirming the Step 8 targeting logic was sound**: the 26 additional
+single-hop questions judged here for the first time hold up just as well as
+the retrieval-hit screen implied, so the hard-subset strategy of
+concentrating judging effort on cross-reference/multi-hop/temporal-conflict
+questions wasn't hiding a hidden single-hop problem.
+
+Temporal-conflict's 0.050 answer-correctness despite 100% retrieval hit and
+0.925 faithfulness is **not a retrieval problem** — it's the same two
+generation-stage failures already found in Step 8 (one pure non-responsive
+answer despite perfect top-1 retrieval; one correct, justified abstention
+that still scores 0 on a strict correctness metric). Multi-hop and
+cross-reference remain the structurally weak categories, consistent with
+every prior measurement in this document.
+
+**One new finding from the 26 previously-unjudged questions:** two different
+Article 50 transparency-guidelines questions (about terms-and-conditions-only
+disclosure sufficiency, and machine-generated-text labeling) both miss the
+same specific passage — paragraph 38 of the transparency guidelines — with
+retrieved chunks covering paragraphs 34-37 but stopping just short of it. The
+judge flagged this as "a systematic chunking/retrieval miss for that specific
+passage rather than a one-off," since both answers reach the right
+conclusion by extrapolating from nearby-but-not-identical text rather than
+citing the actual controlling passage — a concrete, fixable chunk-boundary
+issue for that document, not yet investigated further.
+
 ## 4. Pass-rate timeline at a glance
 
 | Stage | Checks used | Overall pass rate |
@@ -470,6 +541,7 @@ made yet — this step is diagnostic only.
 | + Recursive chunking, judged by Claude Sonnet 5 | independent judge, 6 metrics | 34/41 doc-recall (83%, confirms the screen); 29/41 (71%) fully/mostly correct by outcome label |
 | + Contextual chunk headers (fixed chunking + hybrid) | retrieval-hit only | **36/41 hit rate (87.8%) — new best** |
 | + Contextual headers, judged by Claude Sonnet 5 on hard 15-question subset | independent judge, 6 metrics, hardest questions only | 10/15 doc-recall (67%); 8/15 (53%) fully/mostly correct by outcome label — not comparable to full-set % above |
+| + Contextual headers, judged by Claude Sonnet 5 on all 41 | independent judge, 6 metrics, full set | **36/41 doc-recall (87.8%, confirms the Groq-free screen); 34/41 (82.9%) fully/mostly correct — best full-set outcome-distribution result yet** |
 
 ## 5. What's still open
 
@@ -498,10 +570,11 @@ made yet — this step is diagnostic only.
   secondary retrieval pass over the GDPR sub-collection, or (cheap, separate,
   low-impact) excluding `gdpr_2016_679_mirror.html`'s 7 navigation-only
   chunks from ingestion.
-- Contextual headers judged on the full 41-question 6-check harness — Step 8
-  intentionally judged only the 15-question hard subset (cheaper, targeted);
-  the easier ~26 single-hop questions are not yet re-judged under headers,
-  though the Groq-free screen (Step 7) covers all 41.
+- **Investigate the paragraph-38 chunking gap** (Step 10, new) — two
+  Article 50 transparency-guidelines questions both miss the same specific
+  passage, retrieved chunks stopping just short of it (paragraphs 34-37
+  retrieved, 38 never surfaced) — looks like a systematic chunk-boundary
+  issue for that document, not yet investigated.
 - Contextual headers + recursive chunking stacked together — parked at the
   user's request until remaining tasks are complete.
 - Phase 4 (ingestion sophistication — effective-date metadata, cross-reference

@@ -69,6 +69,45 @@ def _load_claude_judge_records() -> dict[str, dict]:
     return records
 
 
+def _load_contextual_headers_full_judge_records() -> dict[str, dict]:
+    """Combines contextual_headers_full_outputs_for_external_judge.jsonl (real
+    generated answers, contextual-headers pipeline) with
+    contextual_headers_full_judge_scores.jsonl (Claude Sonnet 5's judge
+    scores) for all 41 golden-set questions (Step 10 -- extends Step 8's
+    15-question hard subset to the full set)."""
+    outputs = {}
+    for line in (EVAL_DIR / "contextual_headers_full_outputs_for_external_judge.jsonl").read_text(
+        encoding="utf-8"
+    ).splitlines():
+        if not line.strip():
+            continue
+        rec = json.loads(line)
+        outputs[rec["question"]] = rec["generated_answer"]
+
+    records = {}
+    for line in (EVAL_DIR / "contextual_headers_full_judge_scores.jsonl").read_text(
+        encoding="utf-8"
+    ).splitlines():
+        if not line.strip():
+            continue
+        rec = json.loads(line)
+        question = rec["question"]
+        scores = {
+            "Retrieval Hit": 1.0 if rec["retrieval_hit"] else 0.0,
+            "Chunk-Level Hit": 1.0 if rec["chunk_level_hit"] else 0.0,
+            "MRR": rec["mrr"],
+            "Faithfulness": rec["faithfulness"],
+            "Answer Correctness": rec["answer_correctness"],
+            "Citation Accuracy": rec["citation_accuracy"],
+        }
+        records[question] = {
+            "output": outputs.get(question),
+            "scores": scores,
+            "comment": f"{rec['outcome_label']} — {rec['comment']}",
+        }
+    return records
+
+
 def _load_hard_subset_judge_records() -> dict[str, dict]:
     """Combines hard_subset_outputs_for_external_judge.jsonl (real generated
     answers, contextual-headers pipeline) with hard_subset_judge_scores.jsonl
@@ -179,6 +218,12 @@ def main() -> None:
             "phase3-hybrid-fixed500-ctxheaders-sonnet5judged-hard15-10of15",
             "Phase 3 Step 8: hybrid search + contextual chunk headers, judged by Claude Sonnet 5 on a targeted 15-question hard subset (cross-reference/multi-hop/temporal-conflict + known retrieval misses), not the full 41. 67% doc-recall, 53% fully/mostly correct on this hardest-question subset -- not comparable to other runs' full-set percentages.",
             _load_hard_subset_judge_records(),
+            {"retrieval_mode": "hybrid", "use_contextual_headers": True, "qdrant_collection": "ai_act_corpus_hybrid"},
+        ),
+        (
+            "phase3-hybrid-fixed500-ctxheaders-sonnet5judged-full-34of41",
+            "Phase 3 Step 10: hybrid search + contextual chunk headers, judged by Claude Sonnet 5 on all 41 questions (extends Step 8's 15-question hard subset). 36/41 (87.8%) doc-recall -- exact match with the Groq-free screen -- and 34/41 (82.9%) fully/mostly correct, the best full-set outcome-distribution result yet.",
+            _load_contextual_headers_full_judge_records(),
             {"retrieval_mode": "hybrid", "use_contextual_headers": True, "qdrant_collection": "ai_act_corpus_hybrid"},
         ),
     ]

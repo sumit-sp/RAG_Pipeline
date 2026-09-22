@@ -48,6 +48,10 @@ def main() -> None:
         host=config.LANGFUSE_HOST,
     )
     dataset = client.get_dataset(DATASET_NAME)
+    # Computed before the retriever opens its own Qdrant client -- the local
+    # (embedded, on-disk) Qdrant mode takes an exclusive file lock per client
+    # instance, so two open at once in this process would collide.
+    run_metadata = build_pipeline_metadata(overrides)
     retriever = PlainRetriever()
 
     def task(*, item, **kwargs):
@@ -64,7 +68,7 @@ def main() -> None:
         description=description,
         task=task,
         evaluators=[evaluator],
-        metadata=build_pipeline_metadata(overrides),
+        metadata=run_metadata,
     )
     print(f"-> {run_name}: {len(result.item_results)} items")
     client.flush()
