@@ -2,6 +2,11 @@
 
 ## Phase 3
 
+### Hard-subset judging: 15 targeted questions, not the full 41
+User directive: instead of a full 41-question LLM-as-judge pass on the contextual-headers pipeline (Groq-costly in review effort even when judged externally by Sonnet-5), select ~15 "fairly difficult" questions and judge those. Selected every cross-reference (8), multi-hop (3), and temporal-conflict (2) question — 13 structurally hard by the golden set's own difficulty label — plus the 2 single-hop questions that still miss the automated retrieval-hit check against the contextual-headers index (see `EVALUATION_HISTORY.md` Step 7) — 15 total.
+**Why:** targets judging effort at questions actually likely to fail rather than spreading it evenly across mostly-easy single-hop questions, which is also directly in the spirit of the spec's "Tier 0/1/2 cascade" evaluation-cost strategy (cheap/free checks first, expensive judging reserved for what's still uncertain).
+**Mechanics, per the standing rule:** `eval/export_hard_subset_for_external_judge.py` makes the (allowed) retrieval + Groq generation calls and writes `eval/hard_subset_outputs_for_external_judge.jsonl`; `eval/HARD_SUBSET_JUDGE_INSTRUCTIONS.md` gives the rubric for the user's separate Sonnet-5 session — no Groq/DeepEval judge calls in this repo.
+
 ### Langfuse Cloud adopted now, not deferred to Phase 5
 User asked for Langfuse-based tracking "as an immediate requirement" so eval history and its impact could be understood visually, rather than waiting for Phase 5 as the spec originally scoped it. Chose **Langfuse Cloud** over self-hosting the Docker stack (Postgres/ClickHouse/Redis/MinIO/web/worker) — no infra to run locally, and this project has no data-residency constraint that would require self-hosting.
 **Implementation:** `app/core/tracing.py` wraps `Langfuse.start_as_current_observation(as_type="generation")` around the Groq call in `PlainGenerator`; it's a no-op if `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY` are unset, so local dev without a Langfuse account is unaffected. Confirmed a real trace lands correctly (name, latency, timestamp) via direct API query.
