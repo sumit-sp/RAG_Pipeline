@@ -54,12 +54,16 @@ HYBRID_PREFETCH_LIMIT = int(os.environ.get("HYBRID_PREFETCH_LIMIT", "20"))
 USE_RERANKING = os.environ.get("USE_RERANKING", "false").lower() == "true"
 RERANK_CANDIDATE_LIMIT = int(os.environ.get("RERANK_CANDIDATE_LIMIT", "20"))
 
-# Cross-reference boost (Phase 3): a question naming a regulation that's a small
-# minority of the corpus (e.g. GDPR, ~150 of 837 chunks) can lose the corpus-wide
-# ranking contest to the majority-vocabulary regulation even when the right chunk
-# exists — see EVALUATION_HISTORY.md Step 9. Runs one extra, document-restricted
-# search per matched keyword (app/pipelines/plain/retrieval.py) — no LLM call, so
-# it's unaffected by the Groq-restriction rule.
+# Cross-reference boost (Phase 3): a small-minority document in the corpus
+# (e.g. GDPR, ~150 of 837 chunks) can lose the corpus-wide ranking contest to
+# the majority-vocabulary regulation even when its chunk is the right answer —
+# see EVALUATION_HISTORY.md Step 9. Runs one extra, document-restricted search
+# (app/pipelines/plain/retrieval.py) whenever either (a) the question names a
+# cross-referenced document (Step 11) or (b) an already-retrieved chunk names
+# one that isn't otherwise represented, via each chunk's `references` payload
+# tagged at ingestion (Step 12, app/pipelines/plain/cross_references.py — this
+# is what generalizes beyond exact question phrasing). No LLM call either way,
+# so it's unaffected by the Groq-restriction rule.
 USE_CROSS_REFERENCE_BOOST = os.environ.get("USE_CROSS_REFERENCE_BOOST", "true").lower() == "true"
 CROSS_REFERENCE_BOOST_LIMIT = int(os.environ.get("CROSS_REFERENCE_BOOST_LIMIT", "5"))
 

@@ -12,6 +12,7 @@ class Chunk:
     source_doc: str  # filename under data/raw/, e.g. "ai_act_2024_1689.html"
     doc_type: str  # "regulation" | "guidance" | "adjacent"
     chunk_index: int  # position of this chunk within its source document
+    references: list[str] = field(default_factory=list)  # other source_docs this chunk names explicitly
 
 
 @dataclass

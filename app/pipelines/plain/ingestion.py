@@ -17,6 +17,7 @@ from app.core.interfaces import Embedder
 from app.core.models import Chunk
 from app.pipelines.plain.chunking import chunk_text, recursive_chunk_text
 from app.pipelines.plain.contextual_headers import apply_header, load_headers
+from app.pipelines.plain.cross_references import detect_references
 from app.pipelines.plain.embedding import get_embedder
 from app.pipelines.plain.sparse_embedding import SparseEmbedder
 from app.pipelines.plain.vector_store import (
@@ -85,6 +86,7 @@ class PlainIngestor:
                         source_doc=source_doc,
                         doc_type=doc_type,
                         chunk_index=i,
+                        references=detect_references(chunk_str, exclude_source_doc=source_doc),
                     )
                 )
         return all_chunks
@@ -101,6 +103,7 @@ class PlainIngestor:
                 "source_doc": chunk.source_doc,
                 "doc_type": chunk.doc_type,
                 "chunk_index": chunk.chunk_index,
+                "references": chunk.references,
             }
             for chunk in all_chunks
         ]

@@ -20,11 +20,12 @@ from app.pipelines.plain.retrieval import PlainRetriever
 
 GOLDEN_SET_PATH = Path(__file__).parent / "golden_set.jsonl"
 
-# Current baseline is 39/41 (95.1%) — contextual chunk headers (Step 7) + the
-# GDPR cross-reference boost (Step 11) — see EVALUATION_HISTORY.md. Set a few
-# points below that so normal run-to-run determinism doesn't false-positive,
-# while still catching a real regression.
-MIN_HIT_RATE = 0.90
+# Current baseline is 40/41 (97.6%) — contextual chunk headers (Step 7) + the
+# corpus-side cross-reference boost (Step 12, generalizes Step 11's GDPR-only
+# keyword version) — see EVALUATION_HISTORY.md. Set a few points below that so
+# normal run-to-run determinism doesn't false-positive, while still catching a
+# real regression.
+MIN_HIT_RATE = 0.93
 
 
 def _load_golden_set() -> list[dict]:

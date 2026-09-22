@@ -576,6 +576,72 @@ Also not yet re-validated with a full Sonnet-5 judge pass — only the
 Groq-free retrieval-hit screen — so the downstream effect on answer
 correctness (not just retrieval) isn't measured yet.
 
+### Step 12 — Corpus-side cross-reference tagging — KEPT, new best, generalizes Step 11
+
+Step 11's fix only helped when the *question* said "GDPR." The user asked
+whether that would generalize to other documents or to phrasing that implies
+a cross-referenced regulation without naming it — it wouldn't have. This step
+replaces the question-only signal with a second, corpus-driven one.
+
+**What changed:** at ingestion, every chunk is now scanned for explicit
+mentions of other documents in the corpus (a small alias registry —
+`app/pipelines/plain/cross_references.py` — maps distinctive phrases like
+"Regulation (EU) 2016/679" or "Digital Omnibus" to the document they name)
+and tagged with a `references` list. At retrieval time, the boost now fires
+on **either** signal: the question naming a document (Step 11, kept as a
+cheap first check) **or** an already-retrieved chunk's own `references` tag
+naming a document not yet represented (new — reacts to what the *documents*
+say, not how the *question* is phrased). Both signals share the same alias
+registry, so there's one source of truth. Registration is deliberately
+conservative — only documents with a distinctive, unambiguous phrase (an
+official regulation number) are registered; the three GPAI Code of Practice
+chapters, for example, share a generic name and aren't, since a mention of
+"GPAI Code of Practice" alone can't say which of the three PDFs is meant.
+
+**Result — Groq-free retrieval-hit screen:**
+
+| Config | Retrieval hit rate |
+|---|---|
+| Contextual headers + GDPR keyword boost only (Step 11) | 39/41 (95.1%) |
+| **+ corpus-side cross-reference tagging** | **40/41 (97.6%)** — new best |
+
+The remaining miss is the already-documented Article 53 open-source-exemption
+question, itself a doc-path false negative (Step 8) — the content is present
+in the primary regulation and GPAI scope guidelines, just not literally in
+the nominal "expected" Service Desk page.
+
+**Confirmed it actually generalizes, not just re-derives Step 11:** a second,
+previously-failing question — the original-application-date
+temporal-conflict question, a Step 8/9 doc-path false negative — also now
+passes, unprompted: a top-ranked Digital Omnibus chunk explicitly names
+"Regulation (EU) 2024/1689," which the corpus-side signal picked up on its
+own, pulling in the actual AI Act Article 113 text as a side effect. This is
+a document pair (AI Act ↔ Digital Omnibus) the fix wasn't targeted at — real
+evidence the mechanism generalizes beyond the one diagnosed GDPR case.
+
+**Honest limit, verified directly:** the corpus-side signal only fires when a
+*retrieved* chunk explicitly names the other document — it doesn't detect
+topical relevance on its own. Testing a deliberately rephrased version of one
+of the GDPR questions that never says "GDPR" anywhere ("If an AI tool used
+for hiring processes candidates' health information, what extra data
+protection obligations apply beyond the AI Act itself?") confirmed the boost
+correctly does *not* fire for it, because none of its top-5 retrieved chunks
+happen to name GDPR in their own text either. So this is a broader,
+phrasing-independent version of "detect an explicit named reference," not a
+general "detect topical relevance" solution — a question whose
+best-matching chunks never happen to name the other document in so many
+words remains unsolved by this mechanism, and would need query reformulation
+or a semantic router instead.
+
+**Scope check — how often does this actually fire?** 15 of 41 golden-set
+questions now trigger a boost (up from ~6-8 under the keyword-only version),
+averaging ~5 extra chunks each. Spot-checked and all firings look legitimate
+(e.g. AI Act Articles 10/11/12/14 questions pull in GDPR content because
+those articles' own text explicitly invokes GDPR), not spurious — but this
+is a broader behavior change than Step 11's narrow fix, and **not yet
+re-judged with Sonnet-5**, so whether the extra context helps or dilutes
+answer quality on the 9 newly-boosted non-GDPR questions isn't measured yet.
+
 ## 4. Pass-rate timeline at a glance
 
 | Stage | Checks used | Overall pass rate |
@@ -590,7 +656,8 @@ correctness (not just retrieval) isn't measured yet.
 | + Contextual chunk headers (fixed chunking + hybrid) | retrieval-hit only | **36/41 hit rate (87.8%) — new best** |
 | + Contextual headers, judged by Claude Sonnet 5 on hard 15-question subset | independent judge, 6 metrics, hardest questions only | 10/15 doc-recall (67%); 8/15 (53%) fully/mostly correct by outcome label — not comparable to full-set % above |
 | + Contextual headers, judged by Claude Sonnet 5 on all 41 | independent judge, 6 metrics, full set | **36/41 doc-recall (87.8%, confirms the Groq-free screen); 34/41 (82.9%) fully/mostly correct — best full-set outcome-distribution result yet** |
-| + GDPR cross-reference boost | retrieval-hit only | **39/41 hit rate (95.1%) — new best, zero regressions** |
+| + GDPR cross-reference boost (keyword-triggered) | retrieval-hit only | 39/41 hit rate (95.1%), zero regressions |
+| + Corpus-side cross-reference tagging (generalizes the above) | retrieval-hit only | **40/41 hit rate (97.6%) — new best** |
 
 ## 5. What's still open
 
@@ -611,15 +678,16 @@ correctness (not just retrieval) isn't measured yet.
 - Consider a self-consistency check across paraphrased queries (Finding 4,
   reconfirmed sharply in Step 8 finding 3 — this time producing a wrong
   statutory citation, the most consequential error found so far).
-- **Re-judge the GDPR cross-reference boost with Sonnet-5** (Step 11) — only
-  validated with the Groq-free retrieval-hit screen so far (39/41); the
+- **Re-judge the cross-reference boost with Sonnet-5** (Steps 11-12) — only
+  validated with the Groq-free retrieval-hit screen so far (40/41); the
   downstream effect on faithfulness/answer-correctness/citation-accuracy for
-  the 3 recovered questions isn't measured yet.
-- **The GDPR boost is narrow, keyword-triggered, and GDPR-specific** (Step
-  11) — it works because every golden-set GDPR question happens to say
-  "GDPR" explicitly. A more general fix (query reformulation/HyDE, or a
-  learned router) would be needed for phrasing that implies a
-  cross-referenced regulation without naming it.
+  the recovered questions, and for the 9 newly-boosted non-GDPR questions
+  under Step 12's broader firing, isn't measured yet.
+- **Even the generalized (Step 12) boost still requires a retrieved chunk to
+  explicitly name the other document** — verified directly (see Step 12). A
+  question whose best-matching chunks never happen to name the cross-referenced
+  document in so many words remains unsolved; would need query
+  reformulation/HyDE or a learned router instead.
 - (Cheap, separate, low-impact, still open) exclude
   `gdpr_2016_679_mirror.html`'s 7 navigation-only chunks from ingestion —
   identified in Step 9, unrelated to the boost fix above.

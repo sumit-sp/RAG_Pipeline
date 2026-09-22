@@ -77,7 +77,10 @@ def build_pipeline_metadata(overrides: dict | None = None) -> dict:
         metadata.setdefault("contextual_headers_path", config.CONTEXTUAL_HEADERS_PATH)
     if metadata["use_cross_reference_boost"]:
         metadata.setdefault("cross_reference_boost_limit", config.CROSS_REFERENCE_BOOST_LIMIT)
-        metadata.setdefault("cross_reference_boost_triggers", ["gdpr"])
+        metadata.setdefault(
+            "cross_reference_boost_mode",
+            "corpus-tagged (Step 12)",  # override to "keyword-only (Step 11)" for pre-Step-12 runs
+        )
 
     return metadata
 

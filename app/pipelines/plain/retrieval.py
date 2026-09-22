@@ -1,29 +1,34 @@
 """Retrieval: dense-only top-k (Phase 1 baseline) or hybrid dense+BM25 with RRF
 fusion (Phase 3), selected via RETRIEVAL_MODE.
 
-Phase 3 also adds a targeted cross-reference boost (see EVALUATION_HISTORY.md
-Step 9 / DECISIONS.md): corpus-wide ranking systematically buries GDPR chunks
-for questions phrased mostly in AI-Act vocabulary, because GDPR is only ~150
-of 837 chunks and loses that vocabulary contest even when the right passage is
-present. When a question names a regulation from `_CROSS_REFERENCE_TRIGGERS`,
-an extra search restricted to just that document (no other content competing)
-runs alongside the normal one, and any new chunks it finds are appended."""
+Phase 3 also adds a cross-reference boost (see EVALUATION_HISTORY.md Steps 9,
+11, 12 / DECISIONS.md): corpus-wide ranking systematically buries a small
+minority document (e.g. GDPR is only ~150 of 837 chunks) even when its
+content is the right answer, because it's competing against the whole corpus'
+vocabulary at once. Two independent signals can trigger a supplementary,
+document-restricted search (no other content competing) for a chunk any of
+these signals name:
+  1. The question itself names a cross-referenced document (via
+     `detect_references` on the query text) — cheap, but depends on the
+     user's exact phrasing (Step 11).
+  2. A chunk already retrieved explicitly names another document that isn't
+     otherwise represented (via each chunk's `references` payload, tagged at
+     ingestion time) — generalizes beyond question phrasing, since it reacts
+     to what the documents themselves say, not how the question is worded
+     (Step 12).
+Both use the same alias registry in cross_references.py, so there's one
+source of truth for what counts as a "named" cross-reference."""
 
 from qdrant_client.models import FieldCondition, Filter, FusionQuery, MatchValue, Prefetch
 
 from app.core import config
 from app.core.interfaces import Embedder
 from app.core.models import Chunk, RetrievedContext
+from app.pipelines.plain.cross_references import detect_references
 from app.pipelines.plain.embedding import get_embedder
 from app.pipelines.plain.reranking import Reranker
 from app.pipelines.plain.sparse_embedding import SparseEmbedder
 from app.pipelines.plain.vector_store import get_qdrant_client
-
-# keyword (matched case-insensitively as a substring of the question) -> the
-# source_doc a supplementary, document-restricted search should target. Only
-# GDPR is wired up so far since that's the diagnosed gap (Step 9); a future
-# cross-referenced regulation would just add another entry here.
-_CROSS_REFERENCE_TRIGGERS = {"gdpr": "adjacent/gdpr_2016_679.html"}
 
 
 def _to_context(point) -> RetrievedContext:
@@ -34,6 +39,7 @@ def _to_context(point) -> RetrievedContext:
             source_doc=point.payload["source_doc"],
             doc_type=point.payload["doc_type"],
             chunk_index=point.payload["chunk_index"],
+            references=point.payload.get("references", []),
         ),
         score=point.score,
     )
@@ -87,12 +93,17 @@ class PlainRetriever:
     def _cross_reference_boost(
         self, query: str, existing: list[RetrievedContext]
     ) -> list[RetrievedContext]:
-        query_lower = query.lower()
+        existing_docs = {c.chunk.source_doc for c in existing}
         seen_ids = {c.chunk.id for c in existing}
+
+        targets: set[str] = set(detect_references(query))  # signal 1: question wording
+        for c in existing:  # signal 2: what the retrieved chunks themselves name
+            targets.update(c.chunk.references)
+
         extra: list[RetrievedContext] = []
-        for keyword, source_doc in _CROSS_REFERENCE_TRIGGERS.items():
-            if keyword not in query_lower:
-                continue
+        for source_doc in targets:
+            if source_doc in existing_docs:
+                continue  # already represented in this result set; no boost needed
             doc_filter = Filter(
                 must=[FieldCondition(key="source_doc", match=MatchValue(value=source_doc))]
             )
