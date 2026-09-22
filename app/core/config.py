@@ -7,6 +7,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Must be set before torch (sentence-transformers) and onnxruntime (fastembed)
+# both get loaded into the same process, which they always are here (dense +
+# sparse embedders). Both bundle their own Intel OpenMP runtime; loading both
+# without this can hang indefinitely on some machines (observed: encoding a
+# real batch of chunks blocked with ~0s CPU time, no error, no timeout) rather
+# than erroring cleanly. This is the standard, low-risk workaround for that
+# known conflict. config.py is imported before any embedding code everywhere
+# in this codebase, so setting it here applies project-wide automatically —
+# see DEPLOYMENT.md's troubleshooting section for the full story.
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
 # Pipeline backend selection (Phase 6 adds "langchain" as a second valid value)
 PIPELINE_BACKEND = os.environ.get("PIPELINE_BACKEND", "plain")
 

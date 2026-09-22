@@ -201,3 +201,42 @@ app itself to answer questions.
       "Indexed 837 chunks..." completing without errors
 - [ ] If using Langfuse: a query shows up as a trace in the Langfuse Cloud
       dashboard within a few seconds
+
+## 10. Troubleshooting
+
+**Ingestion appears to hang indefinitely with no error, at or right after
+model loading (~0% CPU, no progress for minutes).** This is a known conflict
+between `torch` (used by `sentence-transformers` for dense embeddings) and
+`onnxruntime` (used by `fastembed` for BM25 sparse embeddings, hybrid mode
+only) — both bundle their own Intel OpenMP runtime, and loading both into
+the same process can deadlock silently on some machines instead of erroring.
+Observed directly on Windows: encoding a real batch of chunks blocked with
+essentially zero CPU time for many minutes, no exception, no timeout.
+**Already fixed automatically** — `app/core/config.py` sets
+`KMP_DUPLICATE_LIB_OK=TRUE` (the standard workaround) at import time, before
+any embedding code loads, so this shouldn't recur. If it somehow still does
+on some environment, also try setting `OMP_NUM_THREADS=1` — that wasn't
+actually necessary when this was diagnosed (confirmed via isolated testing:
+`KMP_DUPLICATE_LIB_OK=TRUE` alone was sufficient), but limits thread-pool
+contention further as a fallback, at some cost to encoding speed.
+
+**Qdrant Cloud returns `400 Bad Request: Index required but not found for
+"source_doc"` on any query.** The embedded/on-disk local Qdrant mode
+silently allows filtering on a payload field with no index; Qdrant Cloud (and
+likely any real Qdrant server) requires an explicit payload index before a
+`Filter`/`FieldCondition` can use that field — this only surfaces once the
+cross-reference boost (`app/pipelines/plain/retrieval.py`) tries to filter
+on `source_doc`. **Already fixed** — `ensure_collection`/
+`ensure_hybrid_collection` in `app/pipelines/plain/vector_store.py` now
+create the needed index automatically whenever a *new* collection is
+created. If you're hitting this on a collection that already existed before
+this fix, create the index once by hand:
+```python
+from qdrant_client.models import PayloadSchemaType
+from app.pipelines.plain.vector_store import get_qdrant_client
+get_qdrant_client().create_payload_index(
+    collection_name="<your collection name>",
+    field_name="source_doc",
+    field_schema=PayloadSchemaType.KEYWORD,
+)
+```
