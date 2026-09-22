@@ -45,7 +45,8 @@ required — everything else has a working default.
 | `PIPELINE_BACKEND` | `plain` | Only `plain` is implemented so far |
 | `EMBEDDING_BACKEND` | `local` | Only `local` is implemented so far — no API key needed |
 | `LOCAL_EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | Downloaded automatically on first use (from Hugging Face) |
-| `QDRANT_URL` | *(unset)* | Set this to use a real/hosted Qdrant server instead of the embedded/on-disk fallback — **see §5, this matters for deployment** |
+| `QDRANT_URL` | *(unset)* | Set this to use a real/hosted Qdrant server (e.g. Qdrant Cloud) instead of the embedded/on-disk fallback — **see §5, this matters for deployment** |
+| `QDRANT_API_KEY` | *(unset)* | Required if `QDRANT_URL` points at Qdrant Cloud (every request needs it there); leave unset for a local/docker-compose server with no auth configured |
 | `QDRANT_PATH` | `./qdrant_local_data` | Only used when `QDRANT_URL` is unset |
 | `QDRANT_COLLECTION` | `ai_act_corpus` | Base collection name (each retrieval mode gets its own suffix, see `collection_name()` in `config.py`) |
 | `RETRIEVAL_MODE` | `hybrid` | `dense` or `hybrid` (dense + BM25 sparse) — **keep as `hybrid`**, it's the validated best (see `EVALUATION_HISTORY.md` Step 2) |
@@ -96,10 +97,15 @@ from `data/raw/` for that deploy. Fine for this corpus's size — it's fast
 and there's nothing to keep in sync. This is what the steps below use.
 
 **Option B — persistent Qdrant (more production-realistic).** Stand up a
-Qdrant Cloud free-tier cluster (or any reachable Qdrant server with a real
-disk), set `QDRANT_URL` to it, and run ingestion once by hand rather than on
-every deploy. The index survives restarts and redeploys; you only re-run
-ingestion when the corpus or chunking config actually changes.
+Qdrant Cloud free-tier cluster (free forever, no credit card: 0.5 vCPU /
+1GB RAM / 4GB disk — comfortably enough for this project's ~5MB corpus) at
+[cloud.qdrant.io](https://cloud.qdrant.io), or use any other reachable
+Qdrant server with a real disk. Set `QDRANT_URL` to the cluster's URL and
+`QDRANT_API_KEY` to its API key (both from the cluster's dashboard — Qdrant
+Cloud requires the API key on every request, unlike a local/docker-compose
+server), then run ingestion once by hand rather than on every deploy. The
+index survives restarts and redeploys; you only re-run ingestion when the
+corpus or chunking config actually changes.
 
 ## 6. Deploying the API (Render)
 
@@ -115,8 +121,8 @@ ingestion when the corpus or chunking config actually changes.
    uvicorn app.api.main:app --host 0.0.0.0 --port $PORT
    ```
 5. Add environment variables in the Render dashboard: `GROQ_API_KEY`,
-   `USE_CONTEXTUAL_HEADERS=true`, and `QDRANT_URL` if using Option B. Everything
-   else can be left at its default (see the table in §3).
+   `USE_CONTEXTUAL_HEADERS=true`, and `QDRANT_URL` + `QDRANT_API_KEY` if using
+   Option B. Everything else can be left at its default (see the table in §3).
 6. Deploy. Once it's live, note the public URL Render assigns — the demo
    needs it.
 7. Sanity check:

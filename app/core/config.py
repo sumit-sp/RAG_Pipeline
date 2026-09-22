@@ -10,10 +10,14 @@ load_dotenv()
 # Pipeline backend selection (Phase 6 adds "langchain" as a second valid value)
 PIPELINE_BACKEND = os.environ.get("PIPELINE_BACKEND", "plain")
 
-# Vector store: if QDRANT_URL is set, connect to a real Qdrant server (e.g. the
-# docker-compose one). Otherwise fall back to qdrant-client's embedded/on-disk
-# mode at QDRANT_PATH — no Docker required. Same client API either way.
+# Vector store: if QDRANT_URL is set, connect to a real Qdrant server (e.g. a
+# Qdrant Cloud cluster, or the docker-compose one). Otherwise fall back to
+# qdrant-client's embedded/on-disk mode at QDRANT_PATH — no Docker required.
+# Same client API either way. QDRANT_API_KEY is required for Qdrant Cloud
+# (every request needs it) and ignored/unnecessary for a local/docker-compose
+# server with no auth configured.
 QDRANT_URL = os.environ.get("QDRANT_URL")
+QDRANT_API_KEY = os.environ.get("QDRANT_API_KEY")
 QDRANT_PATH = os.environ.get("QDRANT_PATH", "./qdrant_local_data")
 QDRANT_COLLECTION = os.environ.get("QDRANT_COLLECTION", "ai_act_corpus")
 
