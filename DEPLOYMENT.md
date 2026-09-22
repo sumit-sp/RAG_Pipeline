@@ -241,3 +241,19 @@ get_qdrant_client().create_payload_index(
     field_schema=PayloadSchemaType.KEYWORD,
 )
 ```
+
+**Render deploy fails with "No open ports detected... Timed Out", build
+succeeded.** `app/api/main.py` used to build the retriever/generator (load
+the embedding models, connect to Qdrant) at module import time — before
+`uvicorn` could bind its port. Render's deploy scan checks for an open
+port on its own timeout, separate from the app actually being ready, and
+on a constrained instance that startup work was slow enough to blow past
+it, so the port never opened in time. Moving the same work into FastAPI's
+lifespan startup handler does **not** fix this — verified directly:
+`uvicorn`'s port doesn't become connectable until lifespan startup itself
+finishes, so it's just as slow either way. **Already fixed** — the
+pipeline is now built lazily, on the first real request (`_get_pipeline()`
+in `app/api/main.py`, guarded by a lock), so the port opens immediately at
+process start and only the first `/query` after each deploy/restart pays
+the load cost (tens of seconds, longer on a small instance) — `/health`
+responds instantly regardless, since it never touches the pipeline.
