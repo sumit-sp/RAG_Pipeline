@@ -1,94 +1,113 @@
-# Task: Build a relevance-judgment set (qrels) for retrieval evaluation
+# Task: Build a relevance-judgment set (qrels) for a RAG retrieval system
 
-**Why this exists:** every retrieval metric this project has used so far
-(Retrieval Hit, Chunk-Level Hit, MRR) checks against a single canonical
-"expected" location per question — never against a complete list of every
-chunk that's actually relevant. That means none of them are true
-Precision@k or Recall@k. This task builds that missing ground truth: for
-each question, the full set of chunks (out of a candidate pool, not the
-whole 837-chunk corpus — see "Scope" below) that a retriever *should* be
-credited for finding.
+## Background
 
-**Input:** one of `eval/qrels_batches/batch_01.jsonl` through `batch_07.jsonl`
-— process **one batch per session** (each is ~500-625KB, 5-6 questions, ~170-215
-candidate chunks). Do not try to do all 7 in one sitting; each deserves careful
-per-chunk reading, not skimming. One JSON object per line:
+This is for a retrieval-augmented generation (RAG) system that answers
+compliance questions about the EU AI Act (an EU regulation) and related
+documents (a related "Digital Omnibus" amendment, GDPR, and various
+Commission/industry guidance documents). The system works by first
+retrieving a handful of text chunks from a ~800-chunk corpus that seem
+relevant to a user's question, then having a language model write an answer
+grounded in those chunks.
+
+The problem this task solves: to properly evaluate how good the retrieval
+step is, you need to know — for each question — the *complete* set of
+chunks that are actually relevant to it, not just one example of a relevant
+chunk. Without that, you can't calculate standard retrieval-quality metrics
+like Precision (what fraction of what was retrieved is actually relevant) or
+Recall (what fraction of everything relevant was actually retrieved). This
+task builds that missing ground truth: for each question, you'll read a set
+of candidate chunks and mark which ones are genuinely relevant.
+
+**Input:** a JSONL file (one JSON object per line), each line shaped like:
 
 ```json
 {
   "question": "...",
   "difficulty": "single-hop | cross-reference | multi-hop | temporal-conflict",
-  "expected_answer": "<golden answer>",
+  "expected_answer": "<the correct/golden answer to the question>",
   "expected_source_doc": "regulation/ai_act_2024_1689.html",
-  "expected_source_section": "<article/section reference>",
+  "expected_source_section": "<article/section reference, e.g. 'Article 5(1)(h)'>",
   "candidates": [
-    {"source_doc": "...", "chunk_index": 0, "text": "<chunk text, including its prepended contextual header>"},
+    {"source_doc": "...", "chunk_index": 0, "text": "<chunk text>"},
     ...
   ]
 }
 ```
 
-## Scope — read this before judging anything
+Notes on the fields:
+- `difficulty` just categorizes the question type; it doesn't affect how you judge relevance.
+- `expected_answer` is the correct answer — use it to understand what facts a relevant chunk would need to contain.
+- `expected_source_doc` / `expected_source_section` point to one known-good location the answer can be found, but they are **not** the full set of relevant chunks — that's exactly what you're building. Other chunks (possibly from other documents) may also be genuinely relevant.
+- Each candidate chunk's `text` sometimes starts with a short one- or two-sentence header (e.g. "From Article 9 of the GDPR, covering...") that was added to situate the chunk before the actual excerpt begins — this is normal, not an error, and can help you understand what the chunk covers.
 
-The `candidates` list for each question is **not** the full 837-chunk corpus
-— it's the union of the top-20 results from 4 independent retrieval methods
-(dense-only, sparse-only, hybrid, and the live pipeline with all current
-boosts), de-duplicated. This is deliberate: exhaustively judging all 837
-chunks against all 41 questions (~34,000 judgments) isn't tractable, and
-standard IR practice ("pooling") is to judge the union of several
-independent methods' results instead, on the assumption that a genuinely
-relevant chunk is very likely to surface in at least one of them.
+**Process one input file per session** — each contains 5-6 questions and
+roughly 30-40 candidate chunks per question (~200 chunks total). Please read
+each candidate chunk carefully rather than skimming; there is no need to
+rush, and a smaller, careful batch is exactly why the file was sized this way.
 
-**Consequence to be aware of, honestly:** any recall computed against this
-file later is bounded by this pool — a relevant chunk that none of the 4
-methods ever surfaced won't be in `candidates` at all, so it can't be
-credited either way. This is a real, accepted limitation of pooling, not
-something to work around; just don't be surprised if a future recall number
-looks unexpectedly close to 100% — it's recall *within the pool*, not recall
-against the full corpus.
+## Where the candidates came from (so you understand the scope)
 
-## What "relevant" means — read this carefully, it's the part most likely to go wrong
+The `candidates` list for each question is **not** every chunk in the entire
+corpus — exhaustively checking all ~800 chunks against every question isn't
+practical. Instead, each question's candidate list was built by combining
+the top results from several different automated search methods run against
+that question (e.g. keyword-based search, semantic/embedding-based search,
+and a combined approach), then merging and de-duplicating them into one
+pool. The assumption is that a genuinely relevant chunk is very likely to
+show up in at least one of those search methods' results, even if it's
+ranked low.
+
+**Practical consequence:** it's possible (and fine) for a question to have
+very few or even zero truly relevant chunks in its candidate list, if none
+of the search methods happened to surface the right content. Just judge what's
+actually in front of you — don't assume there must be a "correct" chunk hiding
+somewhere in the list if you don't see one.
+
+## What "relevant" means — the most important part of this task
 
 Mark a chunk relevant **only if its content would actually be used or needed
-to construct or verify the golden answer** — not just because it's from the
-same regulation, mentions the same general topic, or is in the neighborhood
-of the right article.
+to construct or verify the correct answer** — not just because it's from the
+same regulation, mentions the same general topic, or happens to be near the
+right article/section.
 
-This distinction just caused real, measured harm in this project (see
-`EVALUATION_HISTORY.md` Step 13): a retrieval boost that fired on "this
-chunk merely *names* another regulation" produced citation-accuracy damage
-and even a generation regression, precisely because topical proximity was
-being confused with actual relevance. Don't repeat that mistake here.
+This distinction matters a lot and is easy to get wrong. A very common
+mistake: seeing a chunk that merely *mentions* the right topic in passing
+(e.g. a boilerplate legal disclaimer like "this provision applies without
+prejudice to [some other regulation]") and marking it relevant just because
+it name-drops something related. That is **not** enough — the chunk has to
+actually contain the specific fact, date, rule, obligation, or exception that
+the question is asking about.
 
 - **Relevant:** a chunk containing the specific fact, date, obligation,
-  exception, or provision the `expected_answer` states — even if phrased
-  differently, in a different document than `expected_source_doc`, or only
-  partially covering the answer (e.g. one of two facts a multi-hop question
-  needs).
-- **Not relevant:** a chunk from the right document or the right general
-  area of law that doesn't actually contain anything needed for *this
-  specific* answer — recitals that mention the same regulation in passing,
-  boilerplate cross-references, adjacent articles that don't bear on the
-  question asked, or Service Desk navigation/table-of-contents text.
-- **When in doubt:** ask "if this were the *only* chunk retrieved, would it
-  let the answer be constructed or meaningfully supported?" If no, it's not
-  relevant, even if it's thematically close.
+  exception, or rule that the `expected_answer` states — even if worded
+  differently than the golden answer, even if it's from a document other
+  than `expected_source_doc`, and even if it only covers part of what's
+  needed (e.g., one of two facts a multi-part question requires).
+- **Not relevant:** a chunk from the right general area of law, the right
+  document, or even the right article, that doesn't actually contain
+  anything needed to answer *this specific* question — background recitals
+  that mention the same regulation in passing, unrelated neighboring
+  provisions, generic cross-references, or navigation/table-of-contents-style
+  text with no substantive content.
+- **Quick test when unsure:** ask yourself, "if this were the *only* chunk
+  someone had to answer the question, would it actually let them construct
+  or meaningfully support the correct answer?" If the honest answer is no,
+  it's not relevant — even if it feels thematically close.
 
 ## Output format
 
-For each question, list only the chunks you judged **relevant** — chunks not
-listed are implicitly judged not relevant, so there's no need to write out a
-"not relevant" entry for the majority of the pool that doesn't qualify. One
-JSON object per line, same order as the input, one line per question:
+For each question, list only the chunks you judged **relevant**. Chunks not
+listed are automatically treated as judged "not relevant" — you don't need
+to write an entry for every non-relevant chunk in the pool. Output one JSON
+object per line, in the same order as the input, one line per question:
 
 ```json
 {"question": "...", "relevant_chunks": [{"source_doc": "...", "chunk_index": 0, "reason": "states the exact date the question asks about"}, ...]}
 ```
 
-`reason` should be one short phrase — just enough for a sanity check later,
-not a full explanation. If a question has zero relevant chunks in its pool
-(a real possibility, and itself a useful finding), use `"relevant_chunks": []`.
+- `reason` should be a short phrase (a few words) explaining why the chunk qualifies — not a full explanation, just enough for someone to sanity-check your judgment later.
+- If a question genuinely has zero relevant chunks in its candidate pool, output `"relevant_chunks": []` for it — don't force a marginal match just to avoid an empty list.
 
-Save each batch's output as `eval/qrels_batches/batch_NN_judged.jsonl`
-(matching the input batch number, e.g. `batch_01_judged.jsonl` for
-`batch_01.jsonl`) and bring all 7 back together once done.
+Please name the output file the same as the input file with `_judged` added
+before the extension (e.g. `batch_01.jsonl` → `batch_01_judged.jsonl`).
