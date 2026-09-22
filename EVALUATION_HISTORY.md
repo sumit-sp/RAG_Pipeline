@@ -826,6 +826,69 @@ a CI-config bug, not a retrieval regression: the actual pipeline (and the
 Qdrant Cloud collection it serves from) was never affected, only CI's own
 from-scratch ingestion inside each run.
 
+**This fix was necessary but not sufficient** — see Step 16, a second,
+unrelated CI bug the Step 15 fix's own re-run exposed.
+
+### Step 16 — Found the *real* remaining CI cause: 6 PDFs were never committed to git
+
+After Step 15's fix, CI still failed, now at **70.7% (29/41)** — closer to
+the 93% floor but nowhere near the expected 97.6%. All 12 remaining misses
+were, once again, exactly the guidance documents sourced from PDF files
+(the three GPAI Code of Practice chapters, GPAI scope guidelines, the
+Article 50 transparency guidelines, the AI-Generated-Content Code of
+Practice draft) — zero misses from any HTML-sourced document.
+
+**First hypothesis (wrong, but disproven rather than assumed):** that
+`pymupdf` extracts PDF text differently on Linux (CI) than on Windows
+(local dev), shifting chunk boundaries and misaligning contextual headers
+(matched by `chunk_index`). This was a reasonable hypothesis given the
+Windows/Linux split, but it was checked, not trusted: (1) diffing PDF
+extraction output between pymupdf 1.28.0 and 1.28.2 on the same machine
+showed byte-identical text for all 6 PDFs — ruling out a version-drift
+angle; (2) running the *exact* CI code/config fresh, locally, into a
+throwaway embedded Qdrant store reproduced 97.6% (40/41), not CI's number
+— ruling out a code-level reproducibility bug; that only left a genuine
+Windows-vs-Linux difference as the remaining explanation. To confirm the
+actual mechanism rather than ship a fix for an unconfirmed cause, a
+temporary diagnostic step was added to `eval.yml` printing each PDF's
+extracted-text length/hash/chunk-count/header-match-count from the actual
+CI runner.
+
+**The diagnostic's real finding:** it printed *zero lines for any PDF* and
+still exited successfully — meaning `data/raw/**/*.pdf` matched no files
+at all in CI, not that extraction differed. `.gitignore` had a
+`data/raw/**/*.pdf` line ("re-fetch via `SOURCES.md` instead of committing
+binaries") — but no re-fetch script was ever written. **All 6 guidance
+PDFs were simply never committed to the repository.** CI's checkout never
+had them; ingestion silently indexed only the HTML-sourced ~600 of 837
+chunks, explaining the exact all-or-nothing miss pattern (a PDF-sourced
+question fails 100% of the time when its entire source document doesn't
+exist in the store — not a partial degradation, which a header-alignment
+bug would have produced instead).
+
+**Consequence beyond CI:** `DEPLOYMENT.md`'s recommended "Option A —
+rebuild on every deploy" does a fresh checkout too, meaning a real
+Render/Railway deploy would have hit this identical gap, silently serving
+answers with 6 of 8 source documents missing. The Qdrant Cloud collection
+already in use was unaffected only because it was built by hand from this
+Windows machine, where the PDFs exist on local disk outside git.
+
+**Fix:** removed the `.gitignore` exclusion and committed all 6 PDFs
+(~4.85MB total, official EU Commission publications, already documented
+with source URLs in `data/raw/SOURCES.md`) directly to the repo. Chosen
+over a fetch-script alternative for simplicity and because one of these
+exact documents' source domains has already needed a Wayback Machine
+workaround once this project (see `SOURCES.md`'s EUR-Lex notes) — a
+build-time network fetch would add exactly the kind of fragility that
+already bit this project elsewhere. The temporary diagnostic step and
+script were removed once the finding was confirmed.
+
+**Process note:** this is a case where the *first* plausible-sounding
+explanation (platform-specific library behavior) would have been wrong
+had it been shipped without verification — the diagnostic step's job was
+specifically to falsify or confirm a hypothesis before acting on it, which
+is exactly what happened.
+
 ## 4. Pass-rate timeline at a glance
 
 | Stage | Checks used | Overall pass rate |

@@ -10,9 +10,6 @@ venv/
 .env.*
 !.env.example
 
-# Data (raw source docs can be large; re-fetch via data/raw/SOURCES.md instead of committing binaries)
-data/raw/**/*.pdf
-
 # Docker / local state
 qdrant_storage/
 langfuse_data/

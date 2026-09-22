@@ -181,14 +181,15 @@ automatically (see `DECISIONS.md`, "CI eval scope narrowed"), so
 `GROQ_API_KEY` isn't actually required for CI to pass, only for the deployed
 app itself to answer questions.
 
-> **Known gap, not yet fixed:** `.github/workflows/eval.yml`'s ingestion step
-> does not currently set `USE_CONTEXTUAL_HEADERS=true`. That means CI is
-> presently testing the pre-Step-7 pipeline configuration, not the current
-> best one — its retrieval-hit numbers won't match what's documented in
-> `EVALUATION_HISTORY.md`, and it may fail against `test_retrieval_hit.py`'s
-> current `MIN_HIT_RATE = 0.93` threshold (calibrated for the *with-headers*
-> pipeline). Worth fixing before relying on this workflow as a real
-> regression gate.
+> **Fixed (see `EVALUATION_HISTORY.md` Steps 15-16):** this workflow used to
+> fail its own `MIN_HIT_RATE = 0.93` regression gate for two stacked reasons
+> — `USE_CONTEXTUAL_HEADERS=true` was missing from its env (Step 15), and
+> the 6 PDF-sourced guidance documents weren't actually committed to the
+> repo at all, so any fresh checkout (CI, or a Render/Railway deploy using
+> Option A above) silently indexed only the HTML-sourced ~600 of 837
+> chunks (Step 16). Both are fixed: the env var is set, and the PDFs are
+> committed (`.gitignore`'s old `data/raw/**/*.pdf` exclusion is gone). A
+> fresh checkout now reliably reproduces the documented 97.6% number.
 
 ## 9. Post-deploy checklist
 
