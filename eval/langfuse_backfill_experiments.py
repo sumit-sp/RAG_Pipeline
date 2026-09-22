@@ -194,37 +194,37 @@ def main() -> None:
             "phase2-dense-only-fixed500-baseline-27of41",
             "Phase 2 baseline: dense-only retrieval, fixed 500/50 chunking, post-bugfix. 27/41 (66%) on 4 pipeline metrics.",
             _load_score_records(EVAL_DIR / "eval_run_raw_results_dense.jsonl"),
-            {"retrieval_mode": "dense", "qdrant_collection": "ai_act_corpus"},
+            {"retrieval_mode": "dense", "qdrant_collection": "ai_act_corpus", "use_cross_reference_boost": False},
         ),
         (
             "phase3-hybrid-fixed500-reranked-REVERTED-26of41",
             "Phase 3: hybrid search + cross-encoder reranking. REVERTED - pass rate dropped to 26/41 despite 2 of 4 metrics improving on average.",
             _load_score_records(EVAL_DIR / "eval_run_raw_results_hybrid_rerank.jsonl"),
-            {"retrieval_mode": "hybrid", "use_reranking": True, "qdrant_collection": "ai_act_corpus_hybrid"},
+            {"retrieval_mode": "hybrid", "use_reranking": True, "qdrant_collection": "ai_act_corpus_hybrid", "use_cross_reference_boost": False},
         ),
         (
             "phase3-hybrid-fixed500-reference-24of41",
             "Phase 3 current reference point: hybrid search (kept), fixed 500/50 chunking, all 6 checks (4 pipeline + retrieval-hit + answer-correctness). 24/41 (59%).",
             _load_score_records(EVAL_DIR / "eval_run_raw_results_hybrid.jsonl"),
-            {"retrieval_mode": "hybrid", "qdrant_collection": "ai_act_corpus_hybrid"},
+            {"retrieval_mode": "hybrid", "qdrant_collection": "ai_act_corpus_hybrid", "use_cross_reference_boost": False},
         ),
         (
             "phase3-hybrid-recursive500-sonnet5judged-34of41",
             "Phase 3: hybrid search + recursive chunking, judged independently by Claude Sonnet 5 (not Groq). 83% doc-level retrieval recall - confirms the Groq-free screen.",
             _load_claude_judge_records(),
-            {"retrieval_mode": "hybrid", "chunking_strategy": "recursive", "qdrant_collection": "ai_act_corpus_recursive_hybrid"},
+            {"retrieval_mode": "hybrid", "chunking_strategy": "recursive", "qdrant_collection": "ai_act_corpus_recursive_hybrid", "use_cross_reference_boost": False},
         ),
         (
             "phase3-hybrid-fixed500-ctxheaders-sonnet5judged-hard15-10of15",
             "Phase 3 Step 8: hybrid search + contextual chunk headers, judged by Claude Sonnet 5 on a targeted 15-question hard subset (cross-reference/multi-hop/temporal-conflict + known retrieval misses), not the full 41. 67% doc-recall, 53% fully/mostly correct on this hardest-question subset -- not comparable to other runs' full-set percentages.",
             _load_hard_subset_judge_records(),
-            {"retrieval_mode": "hybrid", "use_contextual_headers": True, "qdrant_collection": "ai_act_corpus_hybrid"},
+            {"retrieval_mode": "hybrid", "use_contextual_headers": True, "qdrant_collection": "ai_act_corpus_hybrid", "use_cross_reference_boost": False},
         ),
         (
             "phase3-hybrid-fixed500-ctxheaders-sonnet5judged-full-34of41",
             "Phase 3 Step 10: hybrid search + contextual chunk headers, judged by Claude Sonnet 5 on all 41 questions (extends Step 8's 15-question hard subset). 36/41 (87.8%) doc-recall -- exact match with the Groq-free screen -- and 34/41 (82.9%) fully/mostly correct, the best full-set outcome-distribution result yet.",
             _load_contextual_headers_full_judge_records(),
-            {"retrieval_mode": "hybrid", "use_contextual_headers": True, "qdrant_collection": "ai_act_corpus_hybrid"},
+            {"retrieval_mode": "hybrid", "use_contextual_headers": True, "qdrant_collection": "ai_act_corpus_hybrid", "use_cross_reference_boost": False},
         ),
     ]
 

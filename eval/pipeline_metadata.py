@@ -60,6 +60,7 @@ def build_pipeline_metadata(overrides: dict | None = None) -> dict:
         "embedding_dimension": _embedding_dimension(collection),
         "generation_model": config.GENERATION_MODEL,
         "qdrant_collection": collection,
+        "use_cross_reference_boost": config.USE_CROSS_REFERENCE_BOOST,
     }
     metadata.update(overrides)
 
@@ -74,6 +75,9 @@ def build_pipeline_metadata(overrides: dict | None = None) -> dict:
         metadata.setdefault("rerank_model", "cross-encoder/ms-marco-MiniLM-L-6-v2")
     if metadata["use_contextual_headers"]:
         metadata.setdefault("contextual_headers_path", config.CONTEXTUAL_HEADERS_PATH)
+    if metadata["use_cross_reference_boost"]:
+        metadata.setdefault("cross_reference_boost_limit", config.CROSS_REFERENCE_BOOST_LIMIT)
+        metadata.setdefault("cross_reference_boost_triggers", ["gdpr"])
 
     return metadata
 

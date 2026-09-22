@@ -528,6 +528,54 @@ conclusion by extrapolating from nearby-but-not-identical text rather than
 citing the actual controlling passage — a concrete, fixable chunk-boundary
 issue for that document, not yet investigated further.
 
+### Step 11 — GDPR cross-reference boost — KEPT, new best
+
+Acted on the Step 9 diagnosis. Root cause, in plain terms: GDPR is only ~150
+of the corpus's 837 chunks, and the normal search ranks every chunk against
+the whole corpus at once — so for a question phrased mostly in AI-Act
+vocabulary, the AI-Act-heavy majority of the corpus can out-rank a GDPR chunk
+even when that GDPR chunk is the right answer. It isn't that the content is
+missing or the search is broken; GDPR is just too small a minority to win a
+corpus-wide vocabulary contest.
+
+**Fix implemented** (`app/pipelines/plain/retrieval.py`,
+`USE_CROSS_REFERENCE_BOOST`, default on): when a question contains the word
+"GDPR" (case-insensitive), run one additional search restricted to just
+`adjacent/gdpr_2016_679.html` (via a Qdrant metadata filter — no other
+document competing), and append any new chunks it finds (up to
+`CROSS_REFERENCE_BOOST_LIMIT`, default 5) to the normal top-k. No LLM call
+involved, so it's unaffected by the Groq-restriction rule, and it's fully
+deterministic and cheap (one extra Qdrant query, only for GDPR-mentioning
+questions).
+
+**Validated before implementing:** re-ran the 3 previously-failing questions
+with a GDPR-only filtered search and confirmed the actual needed chunk (GDPR
+Article 9's operative text for 2 of them, Article 13/14 for the third) now
+ranks 1st-5th within that restricted search — up from being invisible
+(rank 65th-336th) against the full 837-chunk corpus.
+
+**Result — Groq-free retrieval-hit screen:**
+
+| Config | Retrieval hit rate |
+|---|---|
+| Contextual headers, no boost (Step 7) | 36/41 (87.8%) |
+| **Contextual headers + GDPR cross-reference boost** | **39/41 (95.1%)** — new best |
+
+All 3 previously-failing GDPR cross-reference questions now pass, with **zero
+regressions** elsewhere. The 2 remaining misses are the same doc-path-scoring
+false negatives already documented in Step 8/9 (the fact is actually present
+in a different retrieved document) — not new failures.
+
+**Scope and limits, noted honestly:** this is a targeted, keyword-triggered
+fix for the one diagnosed gap (GDPR), not a general solution to cross-document
+retrieval. It works here because every GDPR-cross-reference question in the
+golden set happens to say "GDPR" explicitly — a real system facing more
+varied phrasing (e.g. a question that means GDPR without naming it) would
+need the query-reformulation or routing approaches Step 9 also considered.
+Also not yet re-validated with a full Sonnet-5 judge pass — only the
+Groq-free retrieval-hit screen — so the downstream effect on answer
+correctness (not just retrieval) isn't measured yet.
+
 ## 4. Pass-rate timeline at a glance
 
 | Stage | Checks used | Overall pass rate |
@@ -542,6 +590,7 @@ issue for that document, not yet investigated further.
 | + Contextual chunk headers (fixed chunking + hybrid) | retrieval-hit only | **36/41 hit rate (87.8%) — new best** |
 | + Contextual headers, judged by Claude Sonnet 5 on hard 15-question subset | independent judge, 6 metrics, hardest questions only | 10/15 doc-recall (67%); 8/15 (53%) fully/mostly correct by outcome label — not comparable to full-set % above |
 | + Contextual headers, judged by Claude Sonnet 5 on all 41 | independent judge, 6 metrics, full set | **36/41 doc-recall (87.8%, confirms the Groq-free screen); 34/41 (82.9%) fully/mostly correct — best full-set outcome-distribution result yet** |
+| + GDPR cross-reference boost | retrieval-hit only | **39/41 hit rate (95.1%) — new best, zero regressions** |
 
 ## 5. What's still open
 
@@ -562,14 +611,18 @@ issue for that document, not yet investigated further.
 - Consider a self-consistency check across paraphrased queries (Finding 4,
   reconfirmed sharply in Step 8 finding 3 — this time producing a wrong
   statutory citation, the most consequential error found so far).
-- **Act on the GDPR cross-reference retrieval diagnosis** (Step 9): 3 distinct
-  root causes found (cutoff too tight; genuine deep semantic/lexical mismatch
-  for scenario-phrased queries; compound queries dominated by one
-  regulation's vocabulary) — no fix chosen/implemented yet. Options include
-  query reformulation/HyDE for cross-reference questions, a metadata-filtered
-  secondary retrieval pass over the GDPR sub-collection, or (cheap, separate,
-  low-impact) excluding `gdpr_2016_679_mirror.html`'s 7 navigation-only
-  chunks from ingestion.
+- **Re-judge the GDPR cross-reference boost with Sonnet-5** (Step 11) — only
+  validated with the Groq-free retrieval-hit screen so far (39/41); the
+  downstream effect on faithfulness/answer-correctness/citation-accuracy for
+  the 3 recovered questions isn't measured yet.
+- **The GDPR boost is narrow, keyword-triggered, and GDPR-specific** (Step
+  11) — it works because every golden-set GDPR question happens to say
+  "GDPR" explicitly. A more general fix (query reformulation/HyDE, or a
+  learned router) would be needed for phrasing that implies a
+  cross-referenced regulation without naming it.
+- (Cheap, separate, low-impact, still open) exclude
+  `gdpr_2016_679_mirror.html`'s 7 navigation-only chunks from ingestion —
+  identified in Step 9, unrelated to the boost fix above.
 - **Investigate the paragraph-38 chunking gap** (Step 10, new) — two
   Article 50 transparency-guidelines questions both miss the same specific
   passage, retrieved chunks stopping just short of it (paragraphs 34-37

@@ -54,6 +54,15 @@ HYBRID_PREFETCH_LIMIT = int(os.environ.get("HYBRID_PREFETCH_LIMIT", "20"))
 USE_RERANKING = os.environ.get("USE_RERANKING", "false").lower() == "true"
 RERANK_CANDIDATE_LIMIT = int(os.environ.get("RERANK_CANDIDATE_LIMIT", "20"))
 
+# Cross-reference boost (Phase 3): a question naming a regulation that's a small
+# minority of the corpus (e.g. GDPR, ~150 of 837 chunks) can lose the corpus-wide
+# ranking contest to the majority-vocabulary regulation even when the right chunk
+# exists — see EVALUATION_HISTORY.md Step 9. Runs one extra, document-restricted
+# search per matched keyword (app/pipelines/plain/retrieval.py) — no LLM call, so
+# it's unaffected by the Groq-restriction rule.
+USE_CROSS_REFERENCE_BOOST = os.environ.get("USE_CROSS_REFERENCE_BOOST", "true").lower() == "true"
+CROSS_REFERENCE_BOOST_LIMIT = int(os.environ.get("CROSS_REFERENCE_BOOST_LIMIT", "5"))
+
 
 def collection_name() -> str:
     """Each retrieval mode gets its own collection, since dense-only and hybrid
