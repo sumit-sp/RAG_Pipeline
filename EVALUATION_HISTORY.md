@@ -953,6 +953,119 @@ explanatory caption, not a silent wrong number) for any corpus whose name
 contains "recursive," since `eval/qrels.jsonl` was judged against fixed
 chunking's chunk numbering specifically.
 
+### Step 18 — One hard question, run through all 4 corpora: recursive chunking regressed on a citation, root cause not yet confirmed
+
+Manually ran one multi-hop, citation-heavy golden-set question through
+`dev_ui/experiment_app.py` against all four corpora, logging the full
+answer and retrieved-chunk list each time:
+
+> "The Commission's GPAI scope guidelines describe an open-source
+> exemption from Article 53(1)(a)-(b). Which article of the AI Act's own
+> text, as also captured in the Service Desk's Article 53 page,
+> establishes this exemption, and what condition removes it?"
+> (correct: **Article 53(2)**; exemption is removed for systemic-risk GPAI models)
+
+| Corpus | Cited article | Correct? | Notable retrieval difference |
+|---|---|---|---|
+| Production (fixed + headers) | 53(2) | Yes | — |
+| Fixed only (no headers) | 53(2) | Yes | Lower qrels Precision/Recall than production (0.20/0.33 vs 0.30/0.50) — headers still help |
+| Recursive only (no headers) | 53(1) | **No** — wrong sub-paragraph | Retrieved an extra, less relevant chunk (`article_50.html`) not present in either fixed run |
+| Recursive + headers | **54(6)** | **No** — wrong article entirely | Top-ranked chunk (score 0.6667) was `article_55.html#9`, a different, off-target article, outranking the correct `article_53.html#0` chunk (0.5000) |
+
+**Both recursive corpora got this specific question's citation wrong; both
+fixed corpora got it right.** The recursive+headers run's error — citing
+Article 54(6) instead of 53(2) — is not a new failure mode: it's the
+*exact same hallucination* already documented in Step 8 ("one confidently
+wrong statutory citation (Article 54(6) cited in place of 53(2))"),
+reappearing independently on a completely different corpus build. Seeing
+the identical wrong citation resurface is a meaningful signal that this
+is a real, reproducible weak spot tied to this question's content, not a
+random fluke — but it is still **one question**, not a systematic
+comparison.
+
+**Important caveat, checked against this project's own prior numbers, not
+assumed:** Step 5's Groq-free retrieval-hit screening found recursive
+chunking (alone, no headers, no boost) *beat* fixed chunking in aggregate
+— 34/41 (83%) vs 33/41 (80%). That result and this session's single-question
+regression are not actually in tension: an aggregate winner can still lose
+on specific questions, and this project has never before tested recursive
+chunking stacked with headers *and* the cross-reference boost together
+(the two collections built in Step 17 are the first time that combination
+exists at all). So the honest conclusion is: **recursive chunking is not
+established as worse here — this is one concrete regression on one hard
+question, and it's currently unknown whether it's an isolated case or
+part of a real, systematic pattern.**
+
+**Root cause: not yet confirmed. Working hypotheses, ranked by plausibility:**
+
+1. **A cleaner competing chunk outranks the correct one.** Recursive
+   chunking prefers natural boundaries (paragraph/sentence/word) over a
+   hard token cut. If this makes a topically-adjacent-but-wrong chunk
+   (Article 55, which also discusses systemic-risk classification) more
+   internally coherent, its embedding could become a *stronger* match for
+   this query than it would be under fixed chunking — meaning "better,
+   cleaner chunking" for one document can incidentally make a near-miss
+   chunk from a *different* document look more confidently relevant, not
+   less. This is checkable directly: the dev UI already exposes per-chunk
+   dense and sparse component scores.
+2. **Generation-side citation binding across multiple retrieved chunks.**
+   The answer's *substance* was correct in every run (open-source
+   exemption, removed for systemic-risk models) — only the article number
+   was wrong, and only under recursive chunking. That pattern looks more
+   like the model correctly using content from one chunk but attaching a
+   citation number it picked up from a *different* retrieved chunk, than
+   like a pure retrieval miss. Checkable directly from the captured
+   prompts (dev UI's "Prompt sent to the model" expander) — specifically,
+   whether the correct chunk's text states "Article 53(2)" explicitly, or
+   whether the number only appears in a neighboring chunk.
+3. **Compounding error from projected headers, specific to the headers
+   variant.** The recursive+headers corpus uses headers *projected* from
+   fixed chunking via Step 17's character-offset overlap approximation,
+   not real per-chunk generation. An imperfectly-projected header on the
+   wrong chunk could add a misleading contextual frame on top of
+   hypothesis 1, which would explain why run 4's error (wrong article
+   entirely) was more confidently wrong than run 3's (wrong sub-paragraph
+   only, no headers involved).
+
+**Systematic approach to actually pin this down** (proposed, not yet
+run) — same principle as Steps 15-16's diagnostic-before-fix discipline,
+scaled up using Langfuse rather than one-question manual UI clicks:
+
+1. **Establish whether it's systemic or isolated first.** Re-run the
+   Groq-free retrieval-hit check (`eval/test_retrieval_hit.py`'s logic,
+   no LLM calls) against all 41 golden-set questions for each of the 4
+   named collections, and diff the per-question pass/fail sets pairwise
+   (fixed vs. recursive, headers on vs. off). If citation-heavy /
+   multi-hop / cross-reference questions are disproportionately
+   represented among the *new* recursive-only failures, that supports
+   hypothesis 1/2 as a real pattern rather than one unlucky question.
+2. **Record every run as a named Langfuse experiment against the existing
+   golden-set Dataset** (same pattern as
+   `eval/langfuse_retrieval_hit_experiment.py` /
+   `langfuse_precision_recall_experiment.py`), one experiment per
+   (corpus × question) combination. Since Langfuse traces the full
+   prompt, retrieved chunks, and output per call, this turns today's
+   one-off manual dev-UI comparison into something reusable: Langfuse's
+   **Compare Experiments** view can then show, per question, exactly
+   which chunks and citations differed across all 4 corpora side by
+   side, permanently, without re-deriving anything by hand.
+3. **For every question that flips from correct to incorrect specifically
+   under recursive chunking**, pull that question's per-chunk dense and
+   sparse component scores (already exposed in `dev_ui/pipeline_runner.py`)
+   from the Langfuse trace metadata and check whether the wrong chunk's
+   rank flip is driven by the dense score, the sparse (BM25) score, or the
+   RRF fusion of both — this directly distinguishes an embedding-quality
+   explanation (hypothesis 1) from a lexical-overlap one.
+4. **Isolate the header-projection variable** by comparing recursive-only
+   vs. recursive+headers specifically on whichever questions regressed —
+   if the wrong-citation rate is similar with headers off, hypothesis 3
+   (projection-specific compounding) is ruled out; if headers make it
+   meaningfully worse, that's direct evidence for it.
+
+Not yet run — logged here as the next concrete step rather than a closed
+finding, per the same standard this document has held to since Step 15:
+don't write a root cause down as fact until it's actually been checked.
+
 ## 4. Pass-rate timeline at a glance
 
 | Stage | Checks used | Overall pass rate |
