@@ -1062,9 +1062,49 @@ scaled up using Langfuse rather than one-question manual UI clicks:
    (projection-specific compounding) is ruled out; if headers make it
    meaningfully worse, that's direct evidence for it.
 
-Not yet run — logged here as the next concrete step rather than a closed
-finding, per the same standard this document has held to since Step 15:
-don't write a root cause down as fact until it's actually been checked.
+**Diagnostic step 1, run:** `eval/compare_corpora_retrieval_hit.py` — the
+same Groq-free retrieval-hit check across all 41 questions, once per
+corpus, no LLM calls, diffed pairwise.
+
+| Corpus | Retrieval-hit rate |
+|---|---|
+| Production (fixed + headers) | 40/41 (97.6%) |
+| Fixed only (no headers) | 39/41 (95.1%) |
+| Recursive only (no headers) | 39/41 (95.1%) |
+| **Recursive + headers (projected)** | **41/41 (100%)** — best of all four |
+
+**This is the key result: recursive chunking shows no retrieval-hit
+regression at all — recursive+headers is the best-scoring corpus of the
+four, with zero regressions against either the no-headers recursive
+corpus or production.** Fixed-vs-recursive (both without headers) is a
+wash: 2 questions regressed, 2 different questions improved — consistent
+with Step 5's original finding that recursive isn't uniformly worse.
+Notably, one of the two recursive-only regressions was the *same*
+Article-53-exemption question family this step's manual test used, and
+headers fixed it back to a hit.
+
+**This re-frames the root-cause question.** The manually-found citation
+error (Article 54(6) instead of 53(2)) happened in a run where retrieval
+still succeeded by this metric — `gpai_scope_guidelines.pdf` was retrieved
+in every one of the 4 runs, including the wrong-citation ones. Retrieval-hit
+only checks "was the expected *document* present anywhere in top-k," so it
+cannot see a wrong chunk *outranking* the right one, or a citation number
+picked up from the wrong retrieved chunk — exactly the gap Step 14 already
+found retrieval-hit has for precision generally. That rules hypothesis 3
+(header-projection compounding) *out* as the primary driver (headers
+strictly helped or tied on every question here) and points more strongly
+at hypotheses 1 and 2 (a competing chunk from the wrong article outranking
+the correct one, and/or the model binding the citation number to the wrong
+retrieved chunk) — consistent with what was directly observed manually:
+`article_55.html#9` (score 0.6667) outranked the correct `article_53.html#0`
+(score 0.5000) in that exact run.
+
+**Next diagnostic steps (systematic-approach items 2-3), not yet run:**
+record these as named Langfuse experiments for permanent side-by-side
+comparison, and pull dense/sparse component scores for the specific
+chunks in this question to determine whether the `article_55` chunk's
+rank flip is driven by the dense embedding, the sparse (BM25) score, or
+the RRF fusion of both.
 
 ## 4. Pass-rate timeline at a glance
 
