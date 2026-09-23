@@ -107,6 +107,15 @@ with st.sidebar:
     config.QDRANT_COLLECTION = corpus_options[corpus_label]
 
     def _infer_corpus_config(base_name: str) -> dict:
+        # Production predates this naming convention -- it doesn't contain
+        # "ctxheaders" but WAS built with headers on (Step 7), so it needs an
+        # explicit exception rather than falling through to the convention.
+        if base_name == "ai_act_corpus":
+            return {
+                "chunking_strategy": "fixed",
+                "use_contextual_headers": True,
+                "headers_path": "eval/contextual_headers.jsonl",
+            }
         is_recursive = "recursive" in base_name
         has_headers = "ctxheaders" in base_name
         return {
