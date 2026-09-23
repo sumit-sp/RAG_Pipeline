@@ -61,16 +61,16 @@ class PlainGenerator:
                 )
 
             usage = response.usage
-            trace.set_output(
-                text,
-                usage={
+            usage_dict = (
+                {
                     "input": usage.prompt_tokens,
                     "output": usage.completion_tokens,
                     "total": usage.total_tokens,
                 }
                 if usage
-                else None,
+                else None
             )
+            trace.set_output(text, usage=usage_dict)
 
         citations = sorted({c.chunk.source_doc for c in contexts})
-        return Answer(text=text, citations=citations)
+        return Answer(text=text, citations=citations, usage=usage_dict)

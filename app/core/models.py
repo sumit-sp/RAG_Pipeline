@@ -29,3 +29,4 @@ class Answer:
 
     text: str
     citations: list[str] = field(default_factory=list)  # distinct source_doc values used
+    usage: dict | None = None  # {"input": int, "output": int, "total": int}, if the backend reports it

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "experiment-ui",
+      "runtimeExecutable": ".venv/Scripts/streamlit.exe",
+      "runtimeArgs": ["run", "dev_ui/experiment_app.py", "--server.headless", "true"],
+      "port": 8501
+    }
+  ]
+}

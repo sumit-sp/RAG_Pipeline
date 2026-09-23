@@ -28,3 +28,10 @@ qdrant_local_data/
 
 # DeepEval local run cache
 .deepeval/
+
+# Local experimentation UI's own scratch output (not eval ground truth)
+dev_ui/relevance_feedback.jsonl
+
+# Claude Code local session/runtime state (launch.json is the only shareable part)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
