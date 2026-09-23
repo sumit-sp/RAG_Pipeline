@@ -1099,12 +1099,47 @@ retrieved chunk) — consistent with what was directly observed manually:
 `article_55.html#9` (score 0.6667) outranked the correct `article_53.html#0`
 (score 0.5000) in that exact run.
 
-**Next diagnostic steps (systematic-approach items 2-3), not yet run:**
-record these as named Langfuse experiments for permanent side-by-side
-comparison, and pull dense/sparse component scores for the specific
-chunks in this question to determine whether the `article_55` chunk's
-rank flip is driven by the dense embedding, the sparse (BM25) score, or
-the RRF fusion of both.
+**Diagnostic step 3, run — root cause identified for this specific case:**
+`eval/diagnose_chunk_ranking_flip.py` ran a dense-only search, a
+sparse-only search, and the real hybrid (RRF) search against
+`ai_act_corpus_recursive_ctxheaders_hybrid` for this exact question, and
+compared the two chunks' rank/score in each:
+
+| Chunk | Dense rank | Dense score | Sparse rank | Sparse score | Fused rank |
+|---|---|---|---|---|---|
+| `article_53.html#0` (correct) | **1** (best of 30 candidates) | 0.7785 | *not in top-30* | — | 3 |
+| `article_55.html#9` (wrong) | 2 | 0.7723 | 2 | 20.68 | **1** |
+
+The correct chunk wins decisively on pure semantic similarity — the best
+dense score of any candidate — but has essentially no literal keyword
+overlap with the query; it doesn't make the sparse/BM25 top-30 at all.
+The wrong chunk isn't the best on either signal individually, but is
+solidly good on *both*. **RRF fusion structurally rewards a chunk that
+ranks decently across multiple retrieval signals over one that ranks #1
+on a single signal and is invisible on the other** — that is the actual
+mechanism of the rank flip, not chunk "cleanliness" in the abstract sense
+hypothesis 1 originally proposed, and not header-projection compounding
+(already ruled out by diagnostic 1).
+
+**Why this is chunking-strategy-dependent, specifically:** recursive
+chunking's natural-boundary splitting evidently consolidated a
+keyword-dense passage from Article 55 into one chunk, giving it an
+unusually strong, concentrated BM25 score. Fixed chunking's hard
+token-window cuts most likely split that same content differently,
+diluting the term density below whatever threshold would pull it into
+the sparse candidate pool at all — consistent with fixed chunking not
+exhibiting this problem on this question (Step 18's earlier table).
+
+**Scope of this finding:** confirmed for this one question/chunk pair,
+not yet shown to be a general pattern. The underlying mechanism (RRF
+favoring a multi-signal "generalist" chunk over a single-signal "specialist"
+chunk) is a property of RRF fusion itself, not specific to recursive
+chunking — it could in principle happen under fixed chunking too, for a
+different question where a competing chunk happens to concentrate both
+signals. Still open, not yet run: whether this specific failure mode
+recurs across other questions/corpora (systematic-approach item 2 —
+recording these as named Langfuse experiments for permanent, searchable
+comparison rather than one-off diagnostic scripts).
 
 ## 4. Pass-rate timeline at a glance
 
