@@ -89,6 +89,44 @@ with st.sidebar:
     st.session_state.setdefault("_orig_qdrant_api_key", config.QDRANT_API_KEY)
 
     st.divider()
+    st.header("Corpus")
+    # Each entry is a base collection name -- config.collection_name() appends
+    # "_{RETRIEVAL_MODE}", so these were all built in hybrid mode specifically.
+    # Chunking/headers config per corpus is INFERRED from the base name (below),
+    # not stored anywhere else -- these were the exact env vars each was
+    # ingested with; if you build a new named collection, follow the same
+    # "contains 'recursive'" / "contains 'ctxheaders'" convention or update
+    # _infer_corpus_config so this panel stays accurate.
+    corpus_options = {
+        "Production (ai_act_corpus)": "ai_act_corpus",
+        "Fixed chunking only (ai_act_corpus_fixed)": "ai_act_corpus_fixed",
+        "Recursive chunking only (ai_act_corpus_recursive)": "ai_act_corpus_recursive",
+        "Recursive + contextual headers (ai_act_corpus_recursive_ctxheaders)": "ai_act_corpus_recursive_ctxheaders",
+    }
+    corpus_label = st.selectbox("Corpus (chunking / headers)", list(corpus_options.keys()))
+    config.QDRANT_COLLECTION = corpus_options[corpus_label]
+
+    def _infer_corpus_config(base_name: str) -> dict:
+        is_recursive = "recursive" in base_name
+        has_headers = "ctxheaders" in base_name
+        return {
+            "chunking_strategy": "recursive" if is_recursive else "fixed",
+            "use_contextual_headers": has_headers,
+            # The recursive+headers collection needed headers PROJECTED from
+            # eval/contextual_headers.jsonl (generated against fixed chunking's
+            # different boundaries) onto recursive chunking's boundaries --
+            # see eval/project_headers_to_recursive_chunks.py. Every other
+            # corpus either doesn't use headers or was built against the
+            # original fixed-chunking header file.
+            "headers_path": "eval/contextual_headers_recursive.jsonl" if (is_recursive and has_headers) else "eval/contextual_headers.jsonl",
+        }
+
+    corpus_config = _infer_corpus_config(config.QDRANT_COLLECTION)
+    config.CHUNKING_STRATEGY = corpus_config["chunking_strategy"]
+    config.USE_CONTEXTUAL_HEADERS = corpus_config["use_contextual_headers"]
+    config.CONTEXTUAL_HEADERS_PATH = corpus_config["headers_path"]
+
+    st.divider()
     st.header("Retrieval (live)")
     config.RETRIEVAL_MODE = st.selectbox(
         "Retrieval mode", ["hybrid", "dense"],
@@ -123,13 +161,14 @@ with st.sidebar:
 
     st.divider()
     st.header("Baked into current collection")
-    st.caption("Read-only -- these were fixed at ingestion time. Changing them here would do "
-               "nothing without re-running ingestion into a matching collection.")
+    st.caption("Read-only -- inferred from the selected corpus's name (see the naming "
+               "convention noted above), not editable here. Changing chunking/embedding "
+               "config would do nothing without re-running ingestion into a new collection.")
     st.text(f"Embedding: {config.EMBEDDING_BACKEND} / {config.LOCAL_EMBEDDING_MODEL}")
     st.text(f"Chunking: {config.CHUNKING_STRATEGY} "
             f"({config.CHUNK_SIZE_TOKENS}/{config.CHUNK_OVERLAP_TOKENS} tokens)")
-    st.text(f"Contextual headers: {config.USE_CONTEXTUAL_HEADERS} (current env value -- "
-            f"may not match what an existing collection was actually built with)")
+    st.text(f"Contextual headers: {config.USE_CONTEXTUAL_HEADERS}"
+            + (f" ({config.CONTEXTUAL_HEADERS_PATH})" if config.USE_CONTEXTUAL_HEADERS else ""))
 
     cache_key = retriever_cache_key()
     try:
@@ -188,11 +227,23 @@ if result and result.question == question:
 
             qrels = _qrels().get(r.question)
             if qrels is not None:
-                retrieved = {(c.context.chunk.source_doc, c.context.chunk.chunk_index) for c in r.chunks}
-                pr = eval_lookup.precision_recall_f1(retrieved, qrels)
-                if pr:
-                    p, rec, f1 = pr
-                    st.caption(f"Against qrels.jsonl -- Precision: {p:.2f}  Recall: {rec:.2f}  F1: {f1:.2f}")
+                if "recursive" in r.collection:
+                    # qrels.jsonl's chunk_index values were judged against
+                    # FIXED chunking's boundaries -- they don't correspond to
+                    # this corpus's own (different) chunk numbering, so a
+                    # Precision/Recall comparison here would silently compare
+                    # against the wrong chunk indices rather than fail loudly.
+                    st.caption(
+                        "qrels.jsonl comparison skipped -- it was judged against fixed "
+                        "chunking's chunk numbering, which doesn't apply to this "
+                        "(recursive) corpus's chunks."
+                    )
+                else:
+                    retrieved = {(c.context.chunk.source_doc, c.context.chunk.chunk_index) for c in r.chunks}
+                    pr = eval_lookup.precision_recall_f1(retrieved, qrels)
+                    if pr:
+                        p, rec, f1 = pr
+                        st.caption(f"Against qrels.jsonl -- Precision: {p:.2f}  Recall: {rec:.2f}  F1: {f1:.2f}")
 
             st.markdown("### Retrieved chunks")
             for i, sc in enumerate(r.chunks):

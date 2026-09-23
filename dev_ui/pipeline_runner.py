@@ -46,6 +46,7 @@ class RunResult:
     used_boost: bool
     used_reranking: bool
     top_k: int
+    collection: str
 
 
 def retriever_cache_key() -> tuple:
@@ -142,4 +143,5 @@ def run_pipeline(retriever: PlainRetriever, generator: PlainGenerator, question:
         used_boost=config.USE_CROSS_REFERENCE_BOOST,
         used_reranking=config.USE_RERANKING,
         top_k=top_k,
+        collection=config.collection_name(),
     )

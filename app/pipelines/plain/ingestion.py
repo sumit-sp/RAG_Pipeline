@@ -130,7 +130,14 @@ class PlainIngestor:
                 for chunk, vector, payload in zip(all_chunks, vectors, payloads)
             ]
 
-        self.client.upsert(collection_name=collection, points=points)
+        # Batched rather than one upsert of everything: a single request
+        # carrying the full corpus's vectors+payloads timed out over a
+        # slower/higher-latency network path to a remote server (see
+        # get_qdrant_client's timeout comment) -- batching keeps each
+        # request small regardless of total corpus size.
+        batch_size = 100
+        for i in range(0, len(points), batch_size):
+            self.client.upsert(collection_name=collection, points=points[i : i + batch_size])
         return len(all_chunks)
 
 

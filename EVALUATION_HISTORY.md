@@ -889,6 +889,70 @@ had it been shipped without verification — the diagnostic step's job was
 specifically to falsify or confirm a hypothesis before acting on it, which
 is exactly what happened.
 
+### Step 17 — Three named, permanent corpora for side-by-side chunking/header comparison
+
+At the user's request, built three separate, permanently-named Qdrant
+collections so `dev_ui/experiment_app.py` can compare configs
+interactively instead of only through one-off eval scripts:
+`ai_act_corpus_fixed_hybrid` (fixed 500/50 chunking, no headers),
+`ai_act_corpus_recursive_hybrid` (recursive chunking, no headers), and
+`ai_act_corpus_recursive_ctxheaders_hybrid` (recursive chunking + headers)
+— alongside the existing production `ai_act_corpus_hybrid`. Naming
+convention: base name encodes chunking strategy and whether headers are
+on; the dev UI infers each corpus's "baked-in" config from its name
+rather than a separately-maintained mapping.
+
+**A real correctness risk was checked before building the third
+collection, not assumed away.** `eval/contextual_headers.jsonl` was
+generated against **fixed** chunking's boundaries (837 chunks); recursive
+chunking produces a different chunk count entirely (954, verified
+directly). Naively reusing that header file with recursive chunking would
+have silently misaligned every `(source_doc, chunk_index)` lookup — the
+same bug class as Steps 15-16, self-inflicted this time. Per the
+standing rule that LLM-generated content (headers) is produced externally
+via Sonnet-5 and never regenerated in-session, regenerating headers
+properly for recursive chunking would mean repeating that whole external
+process.
+
+**Instead, a deterministic, no-LLM projection was used**
+(`eval/project_headers_to_recursive_chunks.py`): both chunkers produce
+chunks that are exact substrings of the same source text, so each
+chunk's `(start_char, end_char)` offset can be computed directly (a
+parallel offset-tracking mirror of `chunking.py`'s logic, kept separate
+from core ingestion code to avoid touching it for a one-off migration
+script). Every recursive chunk is assigned the header of whichever fixed
+chunk it overlaps with the most, by character count — an approximation
+(a recursive chunk can span content two different fixed headers
+described), not a real regeneration, but far better than misaligned
+headers or no headers at all. **Self-validating, not just asserted
+correct:** the script re-derives chunk text from its own computed offsets
+and asserts it exactly matches the real `chunk_text()`/
+`recursive_chunk_text()` output for every document before trusting any
+offset — this passed clean (0 assertion failures) across the full corpus,
+and a random sample of 4 projected mappings was manually inspected for
+topical plausibility (3 were a strong content match; 1 was an acceptable
+approximation-noise case, same document/area, slightly different
+paragraph range).
+
+**A second real bug found and fixed along the way:** building these
+collections against Qdrant Cloud hit a reproducible `httpx.WriteTimeout`
+on a single bulk `upsert()` of the full corpus (~837-954 points with
+dense+sparse vectors) — not transient, it failed identically on retry.
+Fixed in `app/pipelines/plain/vector_store.py` (60s client timeout for
+remote connections) and `app/pipelines/plain/ingestion.py` (upserts now
+batched at 100 points per request instead of one giant call) — a general
+robustness fix, not specific to this task, since a real deploy's
+ingestion step over a slow network path could hit the identical failure.
+
+All four collections verified via `client.get_collection(...)` point
+counts (837 / 837 / 954 / 954) and via live queries through the dev UI
+against two of them, confirming correct answers, correct per-collection
+chunk numbering, and correct "baked-in config" display. The dev UI's
+qrels Precision/Recall comparison is intentionally skipped (with an
+explanatory caption, not a silent wrong number) for any corpus whose name
+contains "recursive," since `eval/qrels.jsonl` was judged against fixed
+chunking's chunk numbering specifically.
+
 ## 4. Pass-rate timeline at a glance
 
 | Stage | Checks used | Overall pass rate |

@@ -24,7 +24,11 @@ _INDEXED_PAYLOAD_FIELDS = {"source_doc": PayloadSchemaType.KEYWORD}
 
 def get_qdrant_client() -> QdrantClient:
     if config.QDRANT_URL:
-        return QdrantClient(url=config.QDRANT_URL, api_key=config.QDRANT_API_KEY)
+        # A remote server's default client timeout (a few seconds) isn't
+        # enough for a full-corpus upsert over a slower/higher-latency
+        # network path -- observed directly as httpx.WriteTimeout on an
+        # otherwise-correct request, not a real server error.
+        return QdrantClient(url=config.QDRANT_URL, api_key=config.QDRANT_API_KEY, timeout=60)
     return QdrantClient(path=config.QDRANT_PATH)
 
 
