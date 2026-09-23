@@ -1136,10 +1136,228 @@ favoring a multi-signal "generalist" chunk over a single-signal "specialist"
 chunk) is a property of RRF fusion itself, not specific to recursive
 chunking — it could in principle happen under fixed chunking too, for a
 different question where a competing chunk happens to concentrate both
-signals. Still open, not yet run: whether this specific failure mode
-recurs across other questions/corpora (systematic-approach item 2 —
-recording these as named Langfuse experiments for permanent, searchable
-comparison rather than one-off diagnostic scripts).
+signals.
+
+**Diagnostic step 2, run — all 4 corpora now recorded as Langfuse
+experiments** against the `eu-ai-act-golden-set` Dataset, so this
+comparison is permanent and searchable via Langfuse's Compare Experiments
+view rather than living only in this file and one-off script output:
+
+- `phase3-step18-production-fixed-ctxheaders-retrievalhit-40of41`
+- `phase3-step18-fixed-noheaders-retrievalhit-39of41`
+- `phase3-step18-recursive-noheaders-retrievalhit-39of41`
+- `phase3-step18-recursive-ctxheaders-projected-retrievalhit-41of41`
+- `phase3-step18-production-precisionrecall` and
+  `phase3-step18-fixed-noheaders-precisionrecall` (precision/recall only
+  recorded for the two fixed-chunking corpora — `qrels.jsonl`'s chunk
+  numbering doesn't apply to the recursive corpora, same constraint as
+  the dev UI's qrels-skip caption)
+
+Each run's metadata carries the corpus's actual baked-in config
+(`chunking_strategy`, `use_contextual_headers`, `contextual_headers_path`,
+`qdrant_collection`, `corpus_label`) via `metadata_overrides_json`, since
+none of that is inferable from live env config alone once several named
+collections coexist — the same problem `dev_ui/experiment_app.py`'s
+naming-convention inference solves for interactive use.
+
+**Still open:** whether the specific RRF generalist-vs-specialist failure
+mode found in diagnostic 3 recurs across other questions, not just this
+one — that requires inspecting individual per-question chunk rankings
+across the 41, which these aggregate retrieval-hit/precision-recall
+experiments don't do by themselves. The Langfuse recordings make that
+follow-up practical (all 41 questions' retrieved chunks are now queryable
+per corpus, permanently) but it hasn't been done yet.
+
+### Step 19 — Query decomposition on multi-hop questions: fixed the exact Step 18 citation bug, but not a universal win
+
+User asked to try query decomposition — splitting a multi-hop question
+into independent sub-questions, retrieving separately for each, merging
+the results — as a candidate fix for exactly the kind of failure Step 18
+found (a compound question's single embedding diluting across multiple
+concerns, letting a wrong-but-topically-adjacent chunk outrank the right
+one).
+
+**Standing-rule conflict caught before building, not after:**
+`DECISIONS.md` already has an explicit, deliberately-reasoned rejection of
+live query reformulation/HyDE for the GDPR cross-reference boost, for
+needing "a live LLM call per query at retrieval time... outside what the
+'Groq restricted to generation only' rule allows." Query decomposition is
+the same category of technique. Rather than silently repeating that
+rejected pattern, this was flagged to the user directly, who chose the
+same resolution already established for contextual headers: decompose
+**once, externally**, via a Sonnet-5 session
+(`eval/export_questions_for_decomposition.py` →
+`eval/DECOMPOSITION_INSTRUCTIONS.md` → `eval/decomposed_questions.jsonl`),
+not live at retrieval time. Zero new live LLM calls beyond the one
+generation call each run already made.
+
+**Method:** for each of the 3 multi-hop golden-set questions, against 2
+corpora (production, and the recursive+headers corpus where Step 18's
+citation regression was found), compared **baseline** (retrieve once for
+the original question) vs. **decomposed** (retrieve once per sub-question
+at the same `top_k`, merge + dedupe, generate once against the original
+question). `eval/query_decomposition_experiment.py`.
+
+| Question | Corpus | Baseline | Decomposed |
+|---|---|---|---|
+| Digital Omnibus / Chapters I-II | Production | Wrong (non-answer: "no info found") | **Correct**, full recall |
+| Digital Omnibus / Chapters I-II | Recursive+headers | Wrong (non-answer) | Still wrong (same non-answer) |
+| **Article 53 exemption (Step 18's bug)** | Production | Correct (53(2)) | Correct, precision 0.30→0.71 |
+| **Article 53 exemption (Step 18's bug)** | **Recursive+headers** | **Wrong ("Article 54(6)")** | **Correct ("Article 53(2)")** |
+| Chatbot Art.50 / GDPR notices | Production | Correct | Correct, precision 0.20→0.12 (more noise) |
+| Chatbot Art.50 / GDPR notices | Recursive+headers | Correct | Correct (no change) |
+
+**The headline result:** decomposition fixed the exact citation regression
+Step 18 spent three diagnostics pinning down (Article 54(6) → correct
+Article 53(2)), on the exact corpus where it was found. This is a genuine,
+targeted confirmation that the Step 18 root cause — a compound question's
+single retrieval diluting across concerns, letting a "generalist" wrong
+chunk outrank a "specialist" correct one under RRF fusion — is real and
+addressable: splitting the question into 3 narrower, self-contained
+sub-questions apparently let the correct chunk win its own dedicated
+retrieval decisively, rather than competing against Article 55 content
+inside one blended query.
+
+**Not a universal win, and retrieval-hit still can't see any of this:**
+`hit` was `True` in all 12 cells (baseline and decomposed both always
+retrieved the expected document) — the same retrieval-hit blind spot Step
+18 already found. The real signal is precision/citation correctness. And
+decomposition wasn't free: it retrieves noticeably more chunks per run (7-21
+vs. baseline's fixed 10, since each sub-question searches independently and
+none is currently capped), which sometimes hurt (chatbot question's
+precision dropped 0.20→0.12 under production, more noise chunks with no
+change in correctness) and once made no difference at all (Digital Omnibus
+question stayed wrong under recursive+headers regardless of mode).
+
+**Fixed:** the experiment script initially didn't carry over the
+qrels-chunk-numbering guard the dev UI and diagnostic scripts already use
+(`eval/qrels.jsonl` was judged against fixed chunking's chunk indices,
+which don't apply to the recursive corpus), so its first run's P/R numbers
+for the recursive+headers rows were actually invalid, not just uncertain —
+caught and flagged rather than left as fact. `eval/query_decomposition_experiment.py`
+now skips precision/recall entirely for any corpus whose base name
+contains "recursive" and prints an explicit "skipped" marker instead of a
+silently-wrong number, same as the dev UI's caption. Re-ran after the fix:
+all other numbers (production's P/R, every `hit` value, every generated
+answer) were unchanged, confirming the fix only removed invalid numbers
+rather than changing anything that was already correct. The table above
+never included the recursive-corpus P/R numbers in the first place, so
+this only affects the raw script output going forward.
+
+**Scope:** 3 questions × 2 corpora — a real, useful signal (one confirmed
+fix of a previously-diagnosed bug), not a large enough sample to claim
+decomposition as a general improvement or to quantify its noise cost
+precisely. Not yet tested: whether capping chunks-per-sub-question (rather
+than using the same `top_k` as baseline for each) recovers the precision
+lost on the chatbot question while keeping the Article 53 fix; whether
+this generalizes to the 8 cross-reference-difficulty questions, which
+share the same "compound question, one embedding" shape as the multi-hop
+ones.
+
+### Step 20 — Chunking-strategy-agnostic qrels: real Precision/Recall for recursive chunking, for the first time
+
+User asked why Step 19's precision/recall was inapplicable to recursive
+corpora and how to fix it properly (not just work around it). Answer:
+`eval/qrels.jsonl` recorded relevant chunks as `(source_doc, chunk_index)`
+— not a stable identifier, just "the Nth chunk whichever chunker produced,"
+so index equality across two different chunkers (837 vs. 954 total chunks)
+is coincidental, not meaningful. Presented three options (project the
+existing qrels via the same overlap technique as header projection;
+re-judge from scratch against recursive chunking; or make qrels
+chunking-strategy-agnostic permanently by storing character spans instead
+of indices). **User chose the permanent fix.**
+
+**Implementation — no new judging, a pure re-representation of the same
+already-approved Step 14 relevance judgments:**
+
+- `eval/chunk_offsets.py` (new): the character-offset computation
+  previously duplicated inside `project_headers_to_recursive_chunks.py`,
+  extracted into one shared, self-validating module (each function asserts
+  its own offsets reproduce the real `chunk_text()`/`recursive_chunk_text()`
+  output before returning) — closes the exact duplication risk that
+  script's own docstring had flagged. Refactored the header-projection
+  script to import from it; re-ran and diffed byte-for-byte against its
+  pre-refactor output — identical.
+- `eval/migrate_qrels_to_char_spans.py` (new): converts every relevant
+  `(source_doc, chunk_index)` in `qrels.jsonl` into the `(start_char,
+  end_char)` range that fixed chunk actually covers, producing
+  `eval/qrels_spans.jsonl`. 121 spans migrated (matches the original
+  count exactly), zero unresolved references.
+- `eval/span_scoring.py` (new): shared Precision/Recall scoring against
+  the new span-based qrels, used by `compute_retrieval_metrics.py`,
+  `dev_ui/eval_lookup.py`, and `query_decomposition_experiment.py` — one
+  place, not three separately-drifting copies. A retrieved chunk counts as
+  relevant if it overlaps a relevant span by at least 20% of the smaller
+  of the two ranges (a **fraction**, not a fixed character count, so the
+  threshold means the same thing regardless of a chunking strategy's
+  typical chunk size) — filters out incidental edge-touching overlap from
+  fixed chunking's own deliberate inter-chunk overlap window, without
+  requiring near-total containment.
+- Found and fixed a real bug before it could bite: the per-document
+  chunk-offset cache was initially keyed on `source_doc` alone. That's
+  safe for a batch script (only ever runs under one `CHUNKING_STRATEGY`
+  per process), but not for the interactive dev UI, which can switch
+  corpora mid-session — a document seen under one strategy could then
+  silently serve stale offsets computed under the wrong one. Re-keyed on
+  `(source_doc, chunking_strategy)`.
+
+**Validated against the retired method before trusting it:** re-ran
+Precision/Recall for the two configs Step 14 already measured
+(production, boost on/off). Recall matched **exactly** (0.676 and 0.707 —
+the latter identical to an earlier cloud re-run); Precision was within
+noise (0.356→0.361, 0.295/0.298→0.302) — the tiny, explainable difference
+is span-overlap correctly crediting a genuinely-relevant adjacent chunk
+that exact-index matching missed, due to fixed chunking's own deliberate
+inter-chunk overlap window. Confirms the migration and new scoring are
+correct, not just plausible.
+
+**The new result — real numbers for recursive chunking for the first
+time ever, and a genuine tension with Step 18:**
+
+| Corpus | Boost off (P / R) | Boost on (P / R) |
+|---|---|---|
+| Fixed, no headers | 0.254 / 0.444 | 0.220 / 0.499 |
+| Fixed + headers (production) | 0.361 / 0.676 | 0.302 / 0.707 |
+| Recursive, no headers | 0.283 / 0.499 | 0.241 / 0.564 |
+| **Recursive + headers** | **0.405 / 0.741** | **0.344 / 0.756** |
+
+Two things stand out. **Contextual headers help substantially either way**
+(fixed: +0.107 precision / +0.232 recall; recursive: +0.122 precision /
++0.242 recall) — consistent with every prior finding about headers.
+**Cross-reference boost costs precision for a little recall, in every
+corpus** — consistent with Steps 13/14's already-known trade-off,
+another sanity check that the new metric behaves the way a valid one
+should.
+
+But the headline: **recursive + headers is now the best-scoring corpus of
+all four on this metric — beating current production on both precision
+and recall, in both boost states.** This sits in real tension with Step
+18, which found recursive+headers producing a wrong citation on one
+specific question. Both are true simultaneously: Step 18's single-question
+regression is real (confirmed 3 separate ways: manual comparison, root
+cause, and query decomposition's fix), but it doesn't reflect the
+aggregate picture — across all 41 questions, recursive+headers now
+measurably retrieves more precisely *and* more completely than production
+does, on a metric that (unlike retrieval-hit) can actually see chunk-level
+quality. Neither fact cancels the other out; a single-question finding and
+an aggregate metric are answering different questions, and this project's
+own history (Step 5's aggregate recursive win, followed by Step 18's
+single-question recursive loss) already contains exactly this same
+apparent contradiction once before.
+
+**Also re-ran Step 19's query decomposition experiment** with valid
+recursive-corpus numbers now available (previously shown as "skipped"):
+the exact regression question's precision/recall jumped from 0.30/0.67
+(baseline) to **0.86/1.00** (decomposed) under recursive+headers — an even
+stronger confirmation of Step 19's finding than the citation-text read
+alone provided.
+
+**Not yet done:** re-validate whether the `MIN_OVERLAP_FRACTION = 0.2`
+threshold is well-calibrated (chosen by reasoning about fixed chunking's
+overlap window, not tuned against held-out data); this whole comparison
+is still bounded by the original qrels' candidate pool (Step 14's own
+documented caveat, unchanged by this migration) rather than the full
+corpus.
 
 ## 4. Pass-rate timeline at a glance
 

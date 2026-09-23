@@ -24,6 +24,7 @@ from app.pipelines.plain.generation import PlainGenerator  # noqa: E402
 from app.pipelines.plain.retrieval import PlainRetriever  # noqa: E402
 from dev_ui import eval_lookup  # noqa: E402
 from dev_ui.pipeline_runner import RunResult, retriever_cache_key, run_pipeline  # noqa: E402
+from eval.span_scoring import ChunkSpanLookup  # noqa: E402
 
 FEEDBACK_PATH = Path(__file__).parent / "relevance_feedback.jsonl"
 
@@ -47,7 +48,12 @@ def _golden_set() -> dict:
 
 @st.cache_data
 def _qrels() -> dict:
-    return eval_lookup.load_qrels()
+    return eval_lookup.load_qrels_spans()
+
+
+@st.cache_resource
+def _span_lookup() -> ChunkSpanLookup:
+    return ChunkSpanLookup()
 
 
 def _log_feedback(question: str, source_doc: str, chunk_index: int, relevant: bool) -> None:
@@ -234,25 +240,19 @@ if result and result.question == question:
             if r.usage:
                 m3.metric("Tokens (in/out)", f"{r.usage['input']}/{r.usage['output']}")
 
-            qrels = _qrels().get(r.question)
-            if qrels is not None:
-                if "recursive" in r.collection:
-                    # qrels.jsonl's chunk_index values were judged against
-                    # FIXED chunking's boundaries -- they don't correspond to
-                    # this corpus's own (different) chunk numbering, so a
-                    # Precision/Recall comparison here would silently compare
-                    # against the wrong chunk indices rather than fail loudly.
-                    st.caption(
-                        "qrels.jsonl comparison skipped -- it was judged against fixed "
-                        "chunking's chunk numbering, which doesn't apply to this "
-                        "(recursive) corpus's chunks."
-                    )
-                else:
-                    retrieved = {(c.context.chunk.source_doc, c.context.chunk.chunk_index) for c in r.chunks}
-                    pr = eval_lookup.precision_recall_f1(retrieved, qrels)
-                    if pr:
-                        p, rec, f1 = pr
-                        st.caption(f"Against qrels.jsonl -- Precision: {p:.2f}  Recall: {rec:.2f}  F1: {f1:.2f}")
+            relevant_spans = _qrels().get(r.question)
+            if relevant_spans is not None:
+                # Character-span-based (eval/qrels_spans.jsonl), so this works
+                # regardless of which chunking strategy r's own corpus used --
+                # set from r.collection specifically, not the sidebar's
+                # current selection, since a pinned baseline may have run
+                # against a different corpus than what's currently selected.
+                config.CHUNKING_STRATEGY = "recursive" if "recursive" in r.collection else "fixed"
+                pr = eval_lookup.precision_recall([sc.context for sc in r.chunks], relevant_spans, _span_lookup())
+                if pr:
+                    p, rec = pr
+                    f1 = 2 * p * rec / (p + rec) if (p + rec) else 0.0
+                    st.caption(f"Against qrels_spans.jsonl -- Precision: {p:.2f}  Recall: {rec:.2f}  F1: {f1:.2f}")
 
             st.markdown("### Retrieved chunks")
             for i, sc in enumerate(r.chunks):
