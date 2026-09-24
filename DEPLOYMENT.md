@@ -48,14 +48,14 @@ required — everything else has a working default.
 | `QDRANT_URL` | *(unset)* | Set this to use a real/hosted Qdrant server (e.g. Qdrant Cloud) instead of the embedded/on-disk fallback — **see §5, this matters for deployment** |
 | `QDRANT_API_KEY` | *(unset)* | Required if `QDRANT_URL` points at Qdrant Cloud (every request needs it there); leave unset for a local/docker-compose server with no auth configured |
 | `QDRANT_PATH` | `./qdrant_local_data` | Only used when `QDRANT_URL` is unset |
-| `QDRANT_COLLECTION` | `ai_act_corpus` | Base collection name (each retrieval mode gets its own suffix, see `collection_name()` in `config.py`) |
+| `QDRANT_COLLECTION` | `ai_act_corpus` | **Set this to `ai_act_corpus_recursive_ctxheaders` for deployment** (Step 21) — base collection name, each retrieval mode gets its own suffix, see `collection_name()` in `config.py` |
 | `RETRIEVAL_MODE` | `hybrid` | `dense` or `hybrid` (dense + BM25 sparse) — **keep as `hybrid`**, it's the validated best (see `EVALUATION_HISTORY.md` Step 2) |
 | `RETRIEVAL_TOP_K` | `5` | Chunks returned per query (before any cross-reference boost adds more — see below) |
 | `HYBRID_PREFETCH_LIMIT` | `20` | Candidate pool size per signal (dense/sparse) before RRF fusion, hybrid mode only |
-| `CHUNKING_STRATEGY` | `fixed` | `fixed` or `recursive` — keep as `fixed`, it's what the current best config (contextual headers) was built and validated against |
+| `CHUNKING_STRATEGY` | `fixed` | **Set this to `recursive` for deployment** (Step 21) — `fixed` or `recursive` |
 | `CHUNK_SIZE_TOKENS` / `CHUNK_OVERLAP_TOKENS` | `500` / `50` | Only relevant if you re-run ingestion with different values |
 | `USE_CONTEXTUAL_HEADERS` | `false` | **Set this to `true` for deployment** — see the callout right below this table |
-| `CONTEXTUAL_HEADERS_PATH` | `eval/contextual_headers.jsonl` | Already committed to the repo; no extra setup needed once `USE_CONTEXTUAL_HEADERS=true` |
+| `CONTEXTUAL_HEADERS_PATH` | `eval/contextual_headers.jsonl` | **Set this to `eval/contextual_headers_recursive.jsonl` for deployment** (Step 21) — both files are already committed to the repo |
 | `USE_CROSS_REFERENCE_BOOST` | `true` | On by default — no action needed (see `EVALUATION_HISTORY.md` Steps 11-12) |
 | `CROSS_REFERENCE_BOOST_LIMIT` | `5` | Extra chunks fetched per boosted document |
 | `USE_RERANKING` | `false` | **Leave off** — tried and reverted, see `DECISIONS.md` |

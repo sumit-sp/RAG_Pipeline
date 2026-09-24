@@ -1359,6 +1359,148 @@ is still bounded by the original qrels' candidate pool (Step 14's own
 documented caveat, unchanged by this migration) rather than the full
 corpus.
 
+### Step 21 — Full external judging of recursive+headers: beats production on answer quality too, but the citation bug is confirmed non-deterministic, not fixed
+
+Following Step 20's finding that recursive+headers beats production on
+deterministic retrieval Precision/Recall, the user asked to consider it
+for production. Before deciding, ran the same full-41-question external
+Sonnet-5 judging rigor already applied to production (Steps 6/8/10) —
+retrieval metrics alone can't see answer quality, and Step 13 already
+proved once that a better retrieval number doesn't guarantee a better
+answer. `eval/export_recursive_ctxheaders_full_for_external_judge.py`
+generated real answers for all 41 questions against
+`ai_act_corpus_recursive_ctxheaders_hybrid`; judged per
+`eval/RECURSIVE_CTXHEADERS_FULL_JUDGE_INSTRUCTIONS.md` (fully
+self-contained, same rubric as prior rounds), returning
+`eval/recursive_ctxheaders_full_judge_scores.jsonl`.
+
+**Result — beats production's Step 10 full-set numbers on every measured
+axis:**
+
+| Metric | Production (Step 10) | Recursive + headers (Step 21) |
+|---|---|---|
+| Retrieval hit | 36/41 (87.8%) | **41/41 (100%)** |
+| Chunk-level hit | 34/41 (82.9%) | **39/41 (95.1%)** |
+| Faithfulness | 0.909 | **0.995** |
+| Answer Correctness | 0.828 | **0.934** |
+| Citation Accuracy | 0.663 | **0.755** |
+| Fully/mostly correct (outcome label) | 34/41 (82.9%) | **38/41 (92.7%) `Correct`**, +1 `Correct-Partial` |
+
+**The important nuance, checked rather than assumed:** the Article
+53(2)/54(6) citation question (Step 18's original find) was judged
+`Correct` this round — the answer said "Article 53" correctly, not
+"54(6)". Before treating this as the bug being fixed, pulled the actual
+retrieved chunks for this run and diffed them against Step 18/20's
+runs: **retrieval was byte-identical** — `article_55.html#9` still
+outranks the correct `article_53.html#0` (0.6667 vs. 0.5000, the same
+RRF generalist-vs-specialist mechanism Step 18 already diagnosed). Only
+the *generated wording* differed — this specific Groq call happened to
+phrase the answer correctly despite the same imperfect retrieval
+ordering that produced "Article 54(6)" in earlier calls. **This is not
+the bug being fixed — it's the already-documented LLM-generation noise
+floor (Step 3's variance finding) landing on the correct side of the coin
+this particular time.** The underlying retrieval-level risk (a wrong
+chunk outranking the right one) is still live and unaddressed in the
+production retrieval path; only Step 19's query decomposition has been
+shown to actually change the retrieval outcome rather than hope the LLM
+reads past it correctly.
+
+**Two other real findings from this round, not previously known:**
+
+- **The "Does the Digital Omnibus change Chapters I/II" question scored
+  `Partial`** — a genuine, reproducible "right document, wrong chunk"
+  retrieval miss (the specific amending clause exists in the corpus and
+  was retrieved for *other* questions in this same run, just not this
+  one). This matches Step 19's own finding independently: this exact
+  question stayed wrong under recursive+headers even with query
+  decomposition — cross-confirmation from two separate methods that this
+  is a real, still-open weak spot for this corpus, not a fluke.
+- **A stray, garbled citation-marker artifact** (`【something†L1-L4】`)
+  appeared in one answer — a generation-side glitch not previously
+  observed, worth watching for but not yet investigated.
+
+**Bottom line on the original question (should this become production?):**
+the case for recursive+headers is now substantially stronger than Step
+20 alone showed — it beats production on retrieval metrics *and* on
+externally-judged answer quality, on the same 41 questions, judged the
+same way. But the citation-accuracy risk found in Step 18 is confirmed
+real and latent (not resolved by this judging round happening to avoid
+it), and the concrete, validated mitigation (query decomposition, Step
+19) is not yet wired into the live retrieval pipeline. Promoting this
+corpus without also addressing that gap would mean shipping a known,
+if intermittent, wrong-citation risk.
+
+### Step 22 — Recursive+headers promoted to production
+
+Given Step 20 (best deterministic Precision/Recall of all 4 corpora) and
+Step 21 (also best on every full external-judge metric, confirmed stable
+under extra judge thinking effort), user decided to promote recursive
+chunking + projected headers to production, explicitly accepting the
+known, still-latent, intermittent citation-accuracy risk from Step 18
+rather than waiting to wire in query decomposition (Step 19) first.
+
+**Change:** `.env`/`.env.example`/`DEPLOYMENT.md` now point production at
+`QDRANT_COLLECTION=ai_act_corpus_recursive_ctxheaders`,
+`CHUNKING_STRATEGY=recursive`, `USE_CONTEXTUAL_HEADERS=true`,
+`CONTEXTUAL_HEADERS_PATH=eval/contextual_headers_recursive.jsonl`. The
+previous production collection (`ai_act_corpus_hybrid`, fixed chunking +
+real Sonnet-5 headers) is untouched — rollback is just reverting these
+4 env vars, no re-ingestion needed.
+
+**Verification status: pending, not yet confirmed working end-to-end.**
+A live smoke test against Qdrant Cloud failed 3 times in a row with a
+connection-reset error — including against the *old*, previously-working
+collection, so this looks like a transient network issue on this machine
+right now, not a problem with the new config. Re-verify with a real query
+before treating this as fully live.
+
+### Step 23 — Chain-of-thought prompting doesn't fix Step 18's citation regression; decomposition still does
+
+User asked to test query decomposition (Step 19) combined with chain-of-thought
+prompting against the existing (non-decomposed, non-CoT) setup. Built
+`eval/cot_generation.py` (`CotGenerator`, a drop-in for `PlainGenerator` with a
+system prompt asking the model to reason under a `Reasoning:` section before
+committing to an `Answer:` section — same Groq call, same model, no second LLM
+call) and `eval/decomposition_cot_experiment.py` (4-variant comparison:
+`baseline` / `cot` / `decomposed` / `decomposed_cot`, on the same 3 multi-hop
+questions Step 19 used). Also built `notebooks/rag_experiments.ipynb` and
+`eval/experiment_lib.py` as reusable interactive-experimentation
+infrastructure, so future one-off ideas don't each need a new throwaway
+script.
+
+**Blocked on live data by the still-unresolved Qdrant Cloud connectivity
+issue** (re-confirmed: fresh TLS resets against Qdrant, google.com, and
+github.com alike, all with the same `CRYPT_E_NO_REVOCATION_CHECK`/
+connection-reset signature — this machine's network/proxy, not Qdrant or this
+project's config). Rather than wait, built `eval/build_local_corpus.py`: an
+embedded, on-disk Qdrant copy (954 chunks) mirroring production config exactly
+(hybrid retrieval, recursive chunking, contextual headers, cross-reference
+boost) — no network needed — and ran the real comparison against it.
+
+**Result: chain-of-thought prompting alone does not fix the Article
+53(2)/54(6) citation regression.** On that exact question, both `baseline` and
+`cot` cite "Article 54(6)" (wrong — `article_55.html` still outranks
+`article_53.html`, the identical Step 18 retrieval bug); `decomposed` and
+`decomposed_cot` both correctly cite "Article 53(2)". Chain-of-thought changed
+*phrasing* (tighter, more assertive wording) on all 3 questions but never
+changed *which sources got cited* on any of them — consistent with the Step
+18→19 diagnosis that the bug lives in what gets retrieved (RRF fusion
+burying the right chunk), not in how the model reasons over whatever context
+it's handed. Decomposition's previously-observed cost held too: more chunks
+retrieved per run (16-21 vs. 10), recall flat-to-better, precision often
+worse. Confirms Step 19/20's conclusion stands and adds a new one: CoT is not
+a substitute for fixing retrieval, at least not for this failure mode.
+
+Found and fixed a cosmetic bug in the same run: `gpt-oss` sometimes bolds its
+own `**Answer:**` section label, leaving a dangling `**` after the
+Reasoning/Answer split — `_split_reasoning_and_answer` now strips leftover
+markdown/whitespace from the front of the parsed answer.
+
+**Not yet run against the real Qdrant Cloud production collection** — the
+local corpus mirrors production config but is a separate embedded copy, not
+the live collection itself. Re-run once connectivity is restored to confirm
+this result holds there too.
+
 ## 4. Pass-rate timeline at a glance
 
 | Stage | Checks used | Overall pass rate |

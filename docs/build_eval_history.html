@@ -1,0 +1,165 @@
+<title>AI Act RAG history</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@600&family=Inter:wght@400;500&display=swap">
+<style>
+  :root{
+    --bg:#faf9f6; --surface:#ffffff; --text:#181a1f; --text2:#5b6270; --text3:#8b8f99;
+    --border:#e6e3dc; --accent:#3454d1; --accent-soft:#eef1fc; --accent-ink:#22357e;
+    --good:#1f8a5f; --good-soft:#e8f5ef; --good-ink:#0f5a3d;
+    --bad-soft:#fbebe9; --bad-ink:#9a3324;
+    color-scheme:light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#131417; --surface:#1b1d22; --text:#eceef2; --text2:#a7acb8; --text3:#787d88;
+      --border:#2b2e35; --accent:#7d95ff; --accent-soft:#20263f; --accent-ink:#c3cfff;
+      --good:#4fceA0; --good-soft:#173026; --good-ink:#8fe9c6;
+      --bad-soft:#3a2220; --bad-ink:#f1a89c;
+      color-scheme:dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#131417; --surface:#1b1d22; --text:#eceef2; --text2:#a7acb8; --text3:#787d88;
+    --border:#2b2e35; --accent:#7d95ff; --accent-soft:#20263f; --accent-ink:#c3cfff;
+    --good:#4fceA0; --good-soft:#173026; --good-ink:#8fe9c6;
+    --bad-soft:#3a2220; --bad-ink:#f1a89c;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif;margin:0;padding-block:2.5rem;}
+  .wrap{max-width:880px;margin:0 auto;padding-inline:16px;}
+  h1{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:clamp(1.6rem,4vw,2.1rem);margin:0 0 4px;}
+  .tag{display:inline-flex;align-items:center;gap:6px;background:var(--good-soft);color:var(--good-ink);
+       font-size:12px;font-weight:500;padding:3px 10px;border-radius:100px;border:0.5px solid var(--good);}
+  .sub{color:var(--text2);font-size:14px;margin:10px 0 0;max-width:60ch;}
+  header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:1.75rem;}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:2rem;}
+  .kpi{background:var(--surface);border:0.5px solid var(--border);border-radius:12px;padding:14px 16px;}
+  .kpi .l{font-size:12px;color:var(--text2);margin:0 0 6px;}
+  .kpi .v{font-family:"Source Serif 4",Georgia,serif;font-size:26px;font-weight:600;font-variant-numeric:tabular-nums;margin:0;}
+  .kpi .d{font-size:12px;color:var(--good-ink);margin-top:4px;}
+  section{margin-bottom:2rem;}
+  h2{font-size:15px;font-weight:500;margin:0 0 2px;}
+  .h2sub{font-size:12px;color:var(--text3);margin:0 0 12px;}
+  .card{background:var(--surface);border:0.5px solid var(--border);border-radius:12px;padding:16px;}
+  .legend{display:flex;gap:16px;font-size:12px;color:var(--text2);margin-bottom:6px;flex-wrap:wrap;}
+  .sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px;}
+  .milestones{display:flex;flex-direction:column;border:0.5px solid var(--border);border-radius:12px;overflow:hidden;background:var(--surface);}
+  .m{display:grid;grid-template-columns:34px 1fr auto;gap:12px;align-items:center;padding:10px 14px;
+     border-bottom:0.5px solid var(--border);font-size:13px;}
+  .m:last-child{border-bottom:none;}
+  .m .n{font-family:"Source Serif 4",serif;color:var(--text3);font-size:13px;}
+  .m .t{color:var(--text);}
+  .m .r{color:var(--text2);font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .m.best .r{color:var(--good-ink);font-weight:500;}
+  .m.risk .r{color:var(--bad-ink);}
+  footer{font-size:12px;color:var(--text3);border-top:0.5px solid var(--border);padding-top:14px;}
+  a{color:var(--accent);}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>AI Act RAG — build &amp; eval history</h1>
+      <p class="sub">Retrieval-augmented assistant for EU AI Act compliance questions. Phase 3, iterating against a 41-question golden set.</p>
+    </div>
+    <span class="tag">✓ Live: recursive + headers (Step 22)</span>
+  </header>
+
+  <section class="kpis" aria-label="Current production metrics">
+    <div class="kpi"><p class="l">Retrieval hit</p><p class="v">100%</p><p class="d">+12 pts vs. old prod</p></div>
+    <div class="kpi"><p class="l">Faithfulness</p><p class="v">0.995</p><p class="d">+0.09 vs. old prod</p></div>
+    <div class="kpi"><p class="l">Answer correctness</p><p class="v">0.934</p><p class="d">+0.11 vs. old prod</p></div>
+    <div class="kpi"><p class="l">Citation accuracy</p><p class="v">0.755</p><p class="d">+0.09 vs. old prod</p></div>
+  </section>
+
+  <section>
+    <h2>Retrieval-hit rate over time</h2>
+    <p class="h2sub">Share of 41 golden questions where the right source document was retrieved</p>
+    <div class="card">
+      <div style="position:relative;height:220px;">
+        <canvas id="hitChart" role="img" aria-label="Line chart of retrieval hit rate rising from 80% at fixed chunking baseline to 100% at the current recursive plus headers production config">Retrieval hit rate: fixed baseline 80%, recursive chunking 83%, plus contextual headers 87.8%, plus cross-reference boost 97.6%, current (recursive+headers) 100%.</canvas>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Production switch: old vs. new</h2>
+    <p class="h2sub">Full external LLM-judge scoring, same 41 questions, same rubric (Step 21)</p>
+    <div class="card">
+      <div class="legend">
+        <span><span class="sw" style="background:#9a9d8f"></span>Old production (fixed + headers)</span>
+        <span><span class="sw" style="background:var(--accent)"></span>New production (recursive + headers)</span>
+      </div>
+      <div style="position:relative;height:220px;">
+        <canvas id="compareChart" role="img" aria-label="Grouped bar chart comparing old and new production configs on four metrics, new production higher on all four">Retrieval hit: old 87.8%, new 100%. Faithfulness: old 0.909, new 0.995. Answer correctness: old 0.828, new 0.934. Citation accuracy: old 0.663, new 0.755.</canvas>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Milestones</h2>
+    <p class="h2sub">Full narrative in EVALUATION_HISTORY.md — this is the short version</p>
+    <div class="milestones">
+      <div class="m"><span class="n">01</span><span class="t">Naive dense baseline</span><span class="r">66%</span></div>
+      <div class="m"><span class="n">02</span><span class="t">Hybrid search (dense + BM25) — kept</span><span class="r">76%</span></div>
+      <div class="m"><span class="n">05</span><span class="t">Recursive chunking screened</span><span class="r">83%</span></div>
+      <div class="m best"><span class="n">07</span><span class="t">Contextual chunk headers — new best</span><span class="r">87.8%</span></div>
+      <div class="m best"><span class="n">11–12</span><span class="t">Cross-reference boost — new best</span><span class="r">97.6%</span></div>
+      <div class="m"><span class="n">14</span><span class="t">Real qrels file — true precision/recall, no LLM needed</span><span class="r">P 0.36 / R 0.68</span></div>
+      <div class="m risk"><span class="n">18</span><span class="t">Recursive+headers: one wrong-citation regression found</span><span class="r">54(6)→53(2)</span></div>
+      <div class="m"><span class="n">19</span><span class="t">Query decomposition fixes that exact regression</span><span class="r">P 0.30→0.86</span></div>
+      <div class="m best"><span class="n">20</span><span class="t">Qrels made chunking-agnostic — recursive+headers now best on P/R</span><span class="r">P 0.41 / R 0.74</span></div>
+      <div class="m best"><span class="n">21</span><span class="t">Full judge pass confirms it beats old production</span><span class="r">92.7% correct</span></div>
+      <div class="m best"><span class="n">22</span><span class="t">Promoted to production</span><span class="r">live</span></div>
+    </div>
+  </section>
+
+  <footer>Not legal advice. Portfolio project — see <a href="#">EVALUATION_HISTORY.md</a> and <a href="#">DECISIONS.md</a> for full detail.</footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+  function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  var accent = cssVar('--accent') || '#3454d1';
+  var muted = cssVar('--text3') || '#8b8f99';
+  var grid = cssVar('--border') || '#e6e3dc';
+
+  new Chart(document.getElementById('hitChart'), {
+    type: 'line',
+    data: {
+      labels: ['Fixed baseline', 'Recursive (screen)', '+ Headers', '+ Cross-ref boost', 'Recursive + headers (now)'],
+      datasets: [{
+        data: [80, 83, 87.8, 97.6, 100],
+        borderColor: accent, backgroundColor: accent, borderWidth: 2,
+        pointRadius: 4, pointBackgroundColor: accent, tension: 0.25, fill: false,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { min: 60, max: 100, ticks: { color: muted, callback: v => v + '%' }, grid: { color: grid } },
+        x: { ticks: { color: muted, maxRotation: 20 }, grid: { display: false } }
+      }
+    }
+  });
+
+  new Chart(document.getElementById('compareChart'), {
+    type: 'bar',
+    data: {
+      labels: ['Retrieval hit', 'Faithfulness', 'Answer correctness', 'Citation accuracy'],
+      datasets: [
+        { label: 'Old production', data: [87.8, 90.9, 82.8, 66.3], backgroundColor: '#9a9d8f' },
+        { label: 'New production', data: [100, 99.5, 93.4, 75.5], backgroundColor: accent }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { min: 0, max: 100, ticks: { color: muted, callback: v => v + '%' }, grid: { color: grid } },
+        x: { ticks: { color: muted }, grid: { display: false } }
+      }
+    }
+  });
+</script>

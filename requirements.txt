@@ -18,3 +18,8 @@ pydantic
 deepeval
 pytest
 langfuse
+
+# Interactive experimentation (notebooks/ — not used by app/ or eval/*.py scripts)
+jupyterlab
+ipykernel
+pandas

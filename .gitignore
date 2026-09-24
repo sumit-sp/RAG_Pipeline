@@ -14,6 +14,7 @@ venv/
 qdrant_storage/
 langfuse_data/
 qdrant_local_data/
+eval/local_qdrant_data/
 
 # OS / editor
 .DS_Store
