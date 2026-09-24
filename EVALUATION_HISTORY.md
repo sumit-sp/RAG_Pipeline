@@ -1501,6 +1501,40 @@ local corpus mirrors production config but is a separate embedded copy, not
 the live collection itself. Re-run once connectivity is restored to confirm
 this result holds there too.
 
+### Step 24 — Query decomposition wired into the live pipeline via Groq
+
+User asked to wire Step 19's query decomposition into production, using Groq,
+after reviewing the cost estimate (roughly 1.8-2.4x per-question generation
+cost from the larger merged context decomposition retrieves; the decomposition
+call itself near-free at ~$0.00006/question). This explicitly reverses the
+Step 11/19 standing rule against live LLM calls at retrieval time — logged as
+a deliberate policy change in `DECISIONS.md`, not a quiet workaround.
+
+**What changed:** `app/pipelines/plain/query_decomposition.py` (new) —
+`QueryDecomposer.decompose()` makes one Groq call per question that both
+decides whether it's multi-hop and splits it if so, so a single-hop question
+only pays for one cheap extra call and retrieves exactly as before (no
+fan-out). `app/pipelines/plain/retrieval.py`'s `PlainRetriever.retrieve()` now
+decomposes the question, retrieves once per (sub-)question via a new
+`_retrieve_single()`, and merges+dedupes — identical to the pattern already
+validated offline in Step 19/23, not a new approach invented for this wiring.
+Fails open: any Groq error or malformed JSON response falls back to the
+original, undecomposed question rather than breaking the answer.
+
+**Verification:** ran the live decomposer directly against 3 test questions —
+correctly returned the question unchanged for a single-hop one, and 2-3
+self-contained sub-questions for known multi-hop ones. Ran the full
+`retrieve()` → `generate()` path end-to-end against the local corpus
+(`eval/local_qdrant_data/`, Step 23's stand-in for Qdrant Cloud) on the exact
+Article 53/54 regression question: correctly cited "Article 53(2)" instead of
+Step 18's "Article 54(6)" — same fix Step 19/23 already found, now
+confirmed live through the actual production code path rather than a
+standalone experiment script.
+
+**Not yet verified against the real Qdrant Cloud production collection** —
+still blocked by this machine's unresolved network connectivity issue (see
+PROGRESS.md's network notes). Re-run once connectivity is restored.
+
 ## 4. Pass-rate timeline at a glance
 
 | Stage | Checks used | Overall pass rate |

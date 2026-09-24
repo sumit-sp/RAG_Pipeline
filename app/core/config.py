@@ -42,6 +42,20 @@ LOCAL_EMBEDDING_MODEL = os.environ.get("LOCAL_EMBEDDING_MODEL", "BAAI/bge-small-
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 GENERATION_MODEL = os.environ.get("GENERATION_MODEL", "openai/gpt-oss-20b")
 
+# Live query decomposition (Step 24): a live Groq call at retrieval time decides
+# whether a question is multi-hop and, if so, splits it into self-contained
+# sub-questions, retrieved separately and merged -- see
+# app/pipelines/plain/query_decomposition.py. This reverses the "no live LLM
+# call at retrieval time" rule Steps 11/19 used to justify keeping HyDE/
+# decomposition offline-only (DECISIONS.md); logged there as an explicit,
+# deliberate policy change, not an oversight. Off by default so existing
+# deployments are unaffected until turned on.
+USE_QUERY_DECOMPOSITION = os.environ.get("USE_QUERY_DECOMPOSITION", "false").lower() == "true"
+QUERY_DECOMPOSITION_MODEL = os.environ.get("QUERY_DECOMPOSITION_MODEL", GENERATION_MODEL)
+QUERY_DECOMPOSITION_MAX_SUBQUESTIONS = int(
+    os.environ.get("QUERY_DECOMPOSITION_MAX_SUBQUESTIONS", "4")
+)
+
 # Chunking. "fixed" is the Phase 1 baseline (naive token window). "recursive" is a
 # Phase 3 chunk-size-tuning candidate that prefers natural text boundaries.
 CHUNK_SIZE_TOKENS = int(os.environ.get("CHUNK_SIZE_TOKENS", "500"))

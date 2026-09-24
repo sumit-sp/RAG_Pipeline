@@ -26,9 +26,24 @@ from app.core.interfaces import Embedder
 from app.core.models import Chunk, RetrievedContext
 from app.pipelines.plain.cross_references import detect_references
 from app.pipelines.plain.embedding import get_embedder
+from app.pipelines.plain.query_decomposition import QueryDecomposer
 from app.pipelines.plain.reranking import Reranker
 from app.pipelines.plain.sparse_embedding import SparseEmbedder
 from app.pipelines.plain.vector_store import get_qdrant_client
+
+
+def _merge_dedupe(context_lists: list[list[RetrievedContext]]) -> list[RetrievedContext]:
+    """Combines retrieval runs for multiple (sub-)queries into one list,
+    keeping first-seen order and dropping repeats -- same merge Step 19/23
+    validated offline (eval/query_decomposition_experiment.py)."""
+    seen_ids: set[str] = set()
+    merged: list[RetrievedContext] = []
+    for contexts in context_lists:
+        for c in contexts:
+            if c.chunk.id not in seen_ids:
+                merged.append(c)
+                seen_ids.add(c.chunk.id)
+    return merged
 
 
 def _to_context(point) -> RetrievedContext:
@@ -50,6 +65,7 @@ class PlainRetriever:
         self.embedder = embedder or get_embedder()
         self.sparse_embedder = SparseEmbedder() if config.RETRIEVAL_MODE == "hybrid" else None
         self.reranker = Reranker() if config.USE_RERANKING else None
+        self.decomposer = QueryDecomposer() if config.USE_QUERY_DECOMPOSITION else None
         self.client = get_qdrant_client()
 
     def _search(
@@ -115,7 +131,7 @@ class PlainRetriever:
                     seen_ids.add(chunk.chunk.id)
         return extra
 
-    def retrieve(self, query: str, top_k: int = config.RETRIEVAL_TOP_K) -> list[RetrievedContext]:
+    def _retrieve_single(self, query: str, top_k: int) -> list[RetrievedContext]:
         if self.reranker is None:
             results = self._search(query, limit=top_k)
         else:
@@ -125,3 +141,12 @@ class PlainRetriever:
         if not config.USE_CROSS_REFERENCE_BOOST:
             return results
         return results + self._cross_reference_boost(query, results)
+
+    def retrieve(self, query: str, top_k: int = config.RETRIEVAL_TOP_K) -> list[RetrievedContext]:
+        # A single-hop question (or decomposition off/failed) decomposes to
+        # [query] -- one _retrieve_single call, identical to pre-Step-24
+        # behavior. A multi-hop question retrieves once per sub-question
+        # (each at the same top_k, not a smaller per-sub-question budget --
+        # matches what Step 19/23 actually validated) and merges+dedupes.
+        sub_queries = self.decomposer.decompose(query) if self.decomposer else [query]
+        return _merge_dedupe([self._retrieve_single(sq, top_k) for sq in sub_queries])

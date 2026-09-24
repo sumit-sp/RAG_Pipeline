@@ -40,8 +40,11 @@ required — everything else has a working default.
 
 | Variable | Default | Notes |
 |---|---|---|
-| `GROQ_API_KEY` | *(required)* | Used for generation only — see `DECISIONS.md`, "Groq restricted to generation only" |
+| `GROQ_API_KEY` | *(required)* | Used for generation, and (Step 24) live query decomposition if enabled — never for judging/scoring, see `DECISIONS.md` |
 | `GENERATION_MODEL` | `openai/gpt-oss-20b` | The model used to write answers |
+| `USE_QUERY_DECOMPOSITION` | `false` | **Set this to `true` for deployment** (Step 24) — mitigates the Step 18 citation risk; live Groq call at retrieval time, see `app/pipelines/plain/query_decomposition.py` and `DECISIONS.md` |
+| `QUERY_DECOMPOSITION_MODEL` | *(= `GENERATION_MODEL`)* | Model used for the decomposition call — can be a cheaper/faster model than generation's |
+| `QUERY_DECOMPOSITION_MAX_SUBQUESTIONS` | `4` | Hard cap on sub-questions per multi-hop question |
 | `PIPELINE_BACKEND` | `plain` | Only `plain` is implemented so far |
 | `EMBEDDING_BACKEND` | `local` | Only `local` is implemented so far — no API key needed |
 | `LOCAL_EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | Downloaded automatically on first use (from Hugging Face) |
