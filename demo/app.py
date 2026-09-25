@@ -15,6 +15,55 @@ st.caption(
     "GPAI guidance, or GDPR. Answers are grounded only in the ingested corpus."
 )
 
+_BACKEND_WAKE_BUDGET_SECONDS = 90  # matches _wait_for_backend's own budget below
+
+
+def _check_backend_once() -> bool:
+    try:
+        return requests.get(f"{API_URL}/health", timeout=8).status_code == 200
+    except requests.RequestException:
+        return False
+
+
+def _render_backend_status() -> None:
+    """Pings /health on page load (and automatically again every few seconds
+    while not yet ready, via st.rerun()) so a visitor sees whether the
+    backend is awake *before* they ask anything -- Render's free tier spins
+    it down after inactivity, and the first request after that can take up
+    to about a minute to wake. Caches the result in session_state so an
+    already-confirmed-ready session doesn't re-ping on every rerun (e.g. from
+    typing in another field)."""
+    if "backend_wake_deadline" not in st.session_state:
+        st.session_state.backend_wake_deadline = time.time() + _BACKEND_WAKE_BUDGET_SECONDS
+        st.session_state.backend_status = "checking"
+
+    placeholder = st.empty()
+
+    if st.session_state.backend_status == "ready":
+        placeholder.markdown("🟢 **Backend ready**")
+        return
+
+    ready = _check_backend_once()
+    if ready:
+        st.session_state.backend_status = "ready"
+        placeholder.markdown("🟢 **Backend ready**")
+        return
+
+    if time.time() < st.session_state.backend_wake_deadline:
+        st.session_state.backend_status = "waking"
+        placeholder.markdown("🟡 **Waking up backend...** (free tier can take up to a minute)")
+        time.sleep(3)
+        st.rerun()
+    else:
+        st.session_state.backend_status = "down"
+        placeholder.markdown("🔴 **Backend unreachable** — it may still be starting up")
+        if st.button("🔄 Check again"):
+            st.session_state.backend_wake_deadline = time.time() + _BACKEND_WAKE_BUDGET_SECONDS
+            st.rerun()
+
+
+_render_backend_status()
+
 with st.expander("Optional: use your own Groq API key"):
     st.caption(
         "By default, questions use this demo's shared Groq key. Paste your own "
