@@ -32,9 +32,11 @@ QDRANT_API_KEY = os.environ.get("QDRANT_API_KEY")
 QDRANT_PATH = os.environ.get("QDRANT_PATH", "./qdrant_local_data")
 QDRANT_COLLECTION = os.environ.get("QDRANT_COLLECTION", "ai_act_corpus")
 
-# Embeddings: local by default (no API key needed). Only "local" is implemented
-# in Phase 1 — the Embedder protocol is what makes adding "openai"/"voyage"/
-# "cohere" later a new class, not a rewrite.
+# Embeddings: local by default (no API key needed) -- "local" (sentence-transformers,
+# pulls in PyTorch) or "fastembed" (same model weights, ONNX runtime only, no
+# PyTorch -- added to fit Render's free-tier RAM limit, see app/pipelines/plain/
+# embedding.py). The Embedder protocol is what makes adding a hosted provider
+# ("openai"/"voyage"/"cohere") later a new class, not a rewrite.
 EMBEDDING_BACKEND = os.environ.get("EMBEDDING_BACKEND", "local")
 LOCAL_EMBEDDING_MODEL = os.environ.get("LOCAL_EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
 
