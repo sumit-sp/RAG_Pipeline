@@ -6,7 +6,7 @@ without caring which one it's talking to.
 """
 
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from app.core.models import Answer, Chunk, RetrievedContext
 
@@ -32,10 +32,22 @@ class Ingestor(Protocol):
 class Retriever(Protocol):
     """Finds the chunks most relevant to a question."""
 
-    def retrieve(self, query: str, top_k: int = 5) -> list[RetrievedContext]: ...
+    def retrieve(
+        self, query: str, top_k: int = 5, client: Any | None = None
+    ) -> list[RetrievedContext]:
+        """`client`, when given, is a per-request LLM client (e.g. resolved via
+        byok/) used only for this call's internal decomposition step, if any --
+        never stored, never affecting any other call."""
+        ...
 
 
 class Generator(Protocol):
     """Turns a question + retrieved context into a cited answer."""
 
-    def generate(self, question: str, contexts: list[RetrievedContext]) -> Answer: ...
+    def generate(
+        self, question: str, contexts: list[RetrievedContext], client: Any | None = None
+    ) -> Answer:
+        """`client`, when given, is a per-request LLM client (e.g. resolved via
+        byok/) used only for this call -- never stored, never affecting any
+        other call."""
+        ...

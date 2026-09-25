@@ -23,9 +23,16 @@ def _format_context(contexts: list[RetrievedContext]) -> str:
 
 class PlainGenerator:
     def __init__(self):
-        self.client = Groq(api_key=config.GROQ_API_KEY)
+        self._default_client = Groq(api_key=config.GROQ_API_KEY)
 
-    def generate(self, question: str, contexts: list[RetrievedContext]) -> Answer:
+    def generate(
+        self, question: str, contexts: list[RetrievedContext], client: Groq | None = None
+    ) -> Answer:
+        # `client`, when given (e.g. a byok-resolved, per-request client),
+        # is used for this call only -- self._default_client (shared across
+        # every request via the API layer's singleton pipeline) is never
+        # mutated, so one caller's key can never leak into another's request.
+        client = client or self._default_client
         user_prompt = (
             f"Context excerpts:\n{_format_context(contexts)}\n\nQuestion: {question}"
         )
@@ -40,7 +47,7 @@ class PlainGenerator:
             model=config.GENERATION_MODEL,
             model_parameters=model_parameters,
         ) as trace:
-            response = self.client.chat.completions.create(
+            response = client.chat.completions.create(
                 model=config.GENERATION_MODEL,
                 messages=[
                     {"role": "system", "content": _SYSTEM_PROMPT},

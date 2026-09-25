@@ -69,12 +69,17 @@ def _parse_sub_questions(raw: str) -> list[str]:
 
 class QueryDecomposer:
     def __init__(self, model: str | None = None):
-        self.client = Groq(api_key=config.GROQ_API_KEY)
+        self._default_client = Groq(api_key=config.GROQ_API_KEY)
         self.model = model or config.QUERY_DECOMPOSITION_MODEL
 
-    def decompose(self, question: str) -> list[str]:
+    def decompose(self, question: str, client: Groq | None = None) -> list[str]:
         """Returns [question] unchanged for a single-hop question (or on any
-        failure), or 2-4 self-contained sub-questions for a multi-hop one."""
+        failure), or 2-4 self-contained sub-questions for a multi-hop one.
+
+        `client`, when given, is used for this call only -- see
+        PlainGenerator.generate()'s docstring for why (shared-singleton
+        safety with a byok-resolved, per-request client)."""
+        client = client or self._default_client
         model_parameters = {
             "temperature": 0.0,
             "max_completion_tokens": 512,
@@ -87,7 +92,7 @@ class QueryDecomposer:
                 model=self.model,
                 model_parameters=model_parameters,
             ) as trace:
-                response = self.client.chat.completions.create(
+                response = client.chat.completions.create(
                     model=self.model,
                     messages=[
                         {"role": "system", "content": _SYSTEM_PROMPT},

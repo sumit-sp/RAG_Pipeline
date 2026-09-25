@@ -14,6 +14,7 @@ tiktoken
 groq
 python-dotenv
 pydantic
+cachetools  # byok/ -- session-scoped API key vault
 
 deepeval
 pytest

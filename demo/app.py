@@ -15,7 +15,42 @@ st.caption(
     "GPAI guidance, or GDPR. Answers are grounded only in the ingested corpus."
 )
 
+with st.expander("Optional: use your own Groq API key"):
+    st.caption(
+        "By default, questions use this demo's shared Groq key. Paste your own "
+        "[Groq API key](https://console.groq.com/keys) to use your own quota "
+        "instead. Your key is sent to the backend once, to start a session "
+        "(see byok/README.md) -- it is never stored on disk, logged, or sent "
+        "again after that; only an opaque session id is reused for later questions."
+    )
+    byok_key = st.text_input("Groq API key", type="password", key="byok_key_input")
+
 question = st.text_input("Your question")
+
+
+def _ensure_session(byok_key: str) -> str | None:
+    """Exchanges a raw key for a session_id at most once per distinct key
+    value -- reuses the existing session_id across reruns/questions as long
+    as the pasted key hasn't changed. Returns None (use the shared server
+    key) if the field is empty."""
+    if not byok_key.strip():
+        st.session_state.pop("byok_session_id", None)
+        st.session_state.pop("byok_key_for_session", None)
+        return None
+
+    if st.session_state.get("byok_key_for_session") == byok_key and st.session_state.get(
+        "byok_session_id"
+    ):
+        return st.session_state["byok_session_id"]
+
+    response = requests.post(
+        f"{API_URL}/session", json={"provider": "groq", "api_key": byok_key}, timeout=15
+    )
+    response.raise_for_status()
+    session_id = response.json()["session_id"]
+    st.session_state["byok_session_id"] = session_id
+    st.session_state["byok_key_for_session"] = byok_key
+    return session_id
 
 
 def _wait_for_backend(spinner_status, max_wait_seconds: int = 90) -> bool:
@@ -48,17 +83,35 @@ if st.button("Ask") and question.strip():
         else:
             status.update(label="Retrieving and generating...")
             try:
-                response = requests.post(f"{API_URL}/query", json={"question": question}, timeout=120)
-                response.raise_for_status()
-                data = response.json()
+                session_id = _ensure_session(byok_key)
             except requests.RequestException as e:
-                status.update(label="Request failed.", state="error")
-                st.error(f"Request to API failed: {e}")
+                status.update(label="Couldn't start a session with that key.", state="error")
+                st.error(f"Couldn't start a session with the API key you provided: {e}")
             else:
-                status.update(label="Done.", state="complete")
-                st.markdown("### Answer")
-                st.write(data["answer"])
-                if data["sources"]:
-                    st.markdown("### Sources")
-                    for source in data["sources"]:
-                        st.write(f"- {source}")
+                payload = {"question": question}
+                if session_id:
+                    payload["session_id"] = session_id
+                try:
+                    response = requests.post(f"{API_URL}/query", json=payload, timeout=120)
+                    response.raise_for_status()
+                    data = response.json()
+                except requests.HTTPError as e:
+                    status.update(label="Request failed.", state="error")
+                    if e.response is not None and e.response.status_code in (400, 401, 429):
+                        # /query's own distinguishable BYOK error messages
+                        # (bad/expired session, invalid key, rate limit) --
+                        # surface them as-is rather than a generic failure.
+                        st.error(e.response.json().get("detail", str(e)))
+                    else:
+                        st.error(f"Request to API failed: {e}")
+                except requests.RequestException as e:
+                    status.update(label="Request failed.", state="error")
+                    st.error(f"Request to API failed: {e}")
+                else:
+                    status.update(label="Done.", state="complete")
+                    st.markdown("### Answer")
+                    st.write(data["answer"])
+                    if data["sources"]:
+                        st.markdown("### Sources")
+                        for source in data["sources"]:
+                            st.write(f"- {source}")

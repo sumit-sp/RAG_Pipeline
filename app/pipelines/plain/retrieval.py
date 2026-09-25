@@ -19,6 +19,8 @@ these signals name:
 Both use the same alias registry in cross_references.py, so there's one
 source of truth for what counts as a "named" cross-reference."""
 
+from typing import Any
+
 from qdrant_client.models import FieldCondition, Filter, FusionQuery, MatchValue, Prefetch
 
 from app.core import config
@@ -164,14 +166,20 @@ class PlainRetriever:
             single_trace.set_output({"chunks": len(results)})
         return results
 
-    def retrieve(self, query: str, top_k: int = config.RETRIEVAL_TOP_K) -> list[RetrievedContext]:
+    def retrieve(
+        self, query: str, top_k: int = config.RETRIEVAL_TOP_K, client: Any | None = None
+    ) -> list[RetrievedContext]:
         # A single-hop question (or decomposition off/failed) decomposes to
         # [query] -- one _retrieve_single call, identical to pre-Step-24
         # behavior. A multi-hop question retrieves once per sub-question
         # (each at the same top_k, not a smaller per-sub-question budget --
         # matches what Step 19/23 actually validated) and merges+dedupes.
+        # `client`, when given (e.g. a byok-resolved, per-request Groq
+        # client), is only used for the decomposition call -- retrieval
+        # itself never calls Groq -- and is never stored on self.decomposer,
+        # so it can't leak into a later call that omits it.
         with trace_span("retrieval", as_type="retriever", input={"question": query, "top_k": top_k}) as retrieval_trace:
-            sub_queries = self.decomposer.decompose(query) if self.decomposer else [query]
+            sub_queries = self.decomposer.decompose(query, client=client) if self.decomposer else [query]
             merged = _merge_dedupe([self._retrieve_single(sq, top_k) for sq in sub_queries])
             retrieval_trace.set_output(
                 {"sub_queries": sub_queries, "merged_chunks": len(merged)}
