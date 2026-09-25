@@ -4,13 +4,19 @@ PIPELINE_BACKEND selects which pipeline implementation answers queries. Only
 "plain" exists until Phase 6 adds "langchain" against the same interfaces.
 """
 
+import logging
 import threading
+import time
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from app.core import config
 from app.core.interfaces import Generator, Retriever
+from app.core.tracing import trace_span
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger("app.api")
 
 app = FastAPI(title="EU AI Act Compliance Assistant")
 
@@ -65,13 +71,45 @@ def query(request: QueryRequest) -> QueryResponse:
     if not request.question.strip():
         raise HTTPException(status_code=422, detail="question must not be empty")
 
-    retriever, generator = _get_pipeline()
-    contexts = retriever.retrieve(request.question, top_k=request.top_k)
-    if not contexts:
-        return QueryResponse(
-            answer="No indexed documents found to answer this question yet.",
-            sources=[],
-        )
+    t0 = time.perf_counter()
+    logger.info("query started question=%r top_k=%d", request.question, request.top_k)
 
-    answer = generator.generate(request.question, contexts)
-    return QueryResponse(answer=answer.text, sources=answer.citations)
+    try:
+        # One top-level span per request -- everything retrieve()/generate()
+        # trace underneath (retrieval, decomposition, generation) nests under
+        # this automatically (Langfuse's OTel context propagation), so a
+        # single connected trace shows per-component latency as a waterfall
+        # instead of disconnected generation events. Any exception raised
+        # inside is recorded on the span (status=ERROR) before propagating.
+        with trace_span(
+            "query", as_type="span", input={"question": request.question, "top_k": request.top_k}
+        ) as request_trace:
+            retriever, generator = _get_pipeline()
+            contexts = retriever.retrieve(request.question, top_k=request.top_k)
+
+            if not contexts:
+                response = QueryResponse(
+                    answer="No indexed documents found to answer this question yet.",
+                    sources=[],
+                )
+            else:
+                answer = generator.generate(request.question, contexts)
+                response = QueryResponse(answer=answer.text, sources=answer.citations)
+
+            request_trace.set_output(
+                {"answer": response.answer, "sources": response.sources},
+                metadata={"chunk_count": len(contexts)},
+            )
+    except Exception:
+        elapsed = time.perf_counter() - t0
+        logger.exception(
+            "query failed question=%r elapsed_s=%.2f", request.question, elapsed
+        )
+        raise HTTPException(status_code=500, detail="Internal error answering this question.")
+
+    elapsed = time.perf_counter() - t0
+    logger.info(
+        "query completed question=%r elapsed_s=%.2f chunk_count=%d",
+        request.question, elapsed, len(contexts),
+    )
+    return response

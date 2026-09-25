@@ -319,7 +319,22 @@ exactly as before; a multi-hop one retrieves per sub-question and merges.
 rather than breaking the answer. **Verified:** live decomposer calls
 correctly returned 1 sub-question for single-hop and 2-3 for known
 multi-hop questions; full retrieve→generate path re-ran the exact Step 18
-regression question end-to-end and correctly cited "Article 53(2)".
+regression question end-to-end and correctly cited "Article 53(2)" (against
+a local, on-disk mirror — Qdrant Cloud connectivity was down on this
+machine at the time; re-verified live in Step 25).
+
+### Step 25 — Re-verified Steps 22/23 against real Qdrant Cloud production
+Once Cloud connectivity came back (intermittently), re-ran Step 23's full
+4-variant comparison directly against the actual production collection
+instead of the local mirror. **Confirms Step 22** end-to-end (right
+collection, chunking, headers). **Confirms Step 23, with a live twist:**
+`decomposed`/`decomposed_cot` again correctly cited "Article 53(2)" — but
+this time `baseline`/`cot` *also* got it right, unlike the local-mirror run,
+which reproduced Step 18's wrong "Article 54(6)" citation. Nothing about
+retrieval changed between the two runs — this is a live, reproduced example
+of the exact non-determinism Step 21 already flagged. **Decomposition is the
+reliable fix** (correct on every run so far, at a real precision cost on
+some questions); the underlying bug simply doesn't trigger every time.
 
 ---
 
@@ -327,17 +342,21 @@ regression question end-to-end and correctly cited "Article 53(2)".
 
 - **Live production config:** recursive chunking + projected contextual
   headers + hybrid retrieval + cross-reference boost + query decomposition,
-  all via env vars, old collection kept for instant rollback.
-- **Known open risk:** query decomposition mitigates but wasn't proven to
-  eliminate every instance of the RRF generalist-vs-specialist failure mode
-  — only directly confirmed fixed on the one question it was found on.
-- **Not yet re-verified against the live Qdrant Cloud collection** — recent
-  work (Steps 23-24) validated against a local, on-disk mirror while Cloud
-  connectivity was down on this machine; re-run once that's confirmed
-  restored.
+  all via env vars, old collection kept for instant rollback. **Verified
+  live against the actual Qdrant Cloud production collection as of Step 25**
+  — this machine's Qdrant Cloud connectivity had been down for several
+  steps, came back intermittently, and both the production switch (Step 22)
+  and the decomposition wiring (Step 24) were confirmed working against the
+  real collection, not just a local mirror.
+- **Known open risk:** the underlying RRF generalist-vs-specialist bug
+  (Step 18) is still present in retrieval itself — decomposition mitigates
+  it by retrieving differently, but hasn't been proven to eliminate every
+  instance of it, only the one question it's been directly tested on
+  (correct on every run so far, local and live).
 - **Recurring theme worth telling in an interview:** every major win came
   with a matching negative result or reverted attempt right next to it
   (reranking reverted, cross-reference boost's real judged cost, CI bugs
   chased down with disproven-first hypotheses, decomposition's non-universal
-  benefit) — the discipline was measuring before and after every change,
-  not just keeping whichever number looked best.
+  benefit, the same citation bug caught non-deterministic *live*, twice) —
+  the discipline was measuring before and after every change, not just
+  keeping whichever number looked best.

@@ -1535,6 +1535,31 @@ standalone experiment script.
 still blocked by this machine's unresolved network connectivity issue (see
 PROGRESS.md's network notes). Re-run once connectivity is restored.
 
+### Step 25 — Steps 22/23 re-verified against real Qdrant Cloud production, non-determinism observed live
+
+Qdrant Cloud connectivity came back, at least intermittently, after Step 24.
+Re-ran `eval/decomposition_cot_experiment.py` directly against
+`ai_act_corpus_recursive_ctxheaders_hybrid` (flipped `USE_LOCAL_QDRANT` to
+`False`) instead of the local mirror Step 23 used.
+
+**Confirms Step 22:** the production collection, chunking strategy, and
+contextual headers are all reachable and wired correctly end-to-end — this
+is the first real query against the actual live collection since it was
+promoted to production.
+
+**Confirms Step 23's finding, with a live example of the exact
+non-determinism Step 21 already flagged:** `decomposed`/`decomposed_cot`
+again correctly cited "Article 53(2)" (P=0.86/R=1.00, same as every prior
+run). But this time `baseline`/`cot` *also* cited "Article 53(2)" correctly
+— unlike Step 23's local-mirror run, which reproduced Step 18's wrong
+"Article 54(6)" citation. Nothing about retrieval changed between these two
+runs; the underlying RRF generalist-vs-specialist mechanism (Step 18) is
+still present and didn't happen to trigger this time. **This is direct,
+live evidence for exactly the caveat Step 21 raised about the citation bug
+being non-deterministic rather than fixed** — decomposition is the
+*reliable* fix (correct on every run so far, at a real precision cost on
+some questions), not one that merely got lucky once.
+
 ## 4. Pass-rate timeline at a glance
 
 | Stage | Checks used | Overall pass rate |

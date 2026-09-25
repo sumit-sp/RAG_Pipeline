@@ -39,10 +39,12 @@ DECOMPOSED_PATH = EVAL_DIR / "decomposed_questions.jsonl"
 # Current production config (Step 22) -- see .env / DEPLOYMENT.md.
 CORPUS_BASE_NAME = "ai_act_corpus_recursive_ctxheaders"
 
-# Qdrant Cloud connectivity has been down from this machine (see PROGRESS.md
-# Step 22/23 network notes). Run against the local, on-disk copy built by
-# `python -m eval.build_local_corpus` instead -- flip to False once Cloud is
-# confirmed reachable again, to run against the real production collection.
+# Qdrant Cloud connectivity was down from this machine for a while (see
+# PROGRESS.md's Step 22/23/24 network notes) and has come back, at least
+# intermittently -- confirmed by running this script against production
+# directly (see PROGRESS.md's Step 25 entry). Defaults back to the local,
+# on-disk copy for routine re-runs, since Cloud connectivity isn't reliably
+# stable yet; set False to target production again when needed.
 USE_LOCAL_QDRANT = True
 
 

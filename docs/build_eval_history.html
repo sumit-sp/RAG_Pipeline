@@ -62,7 +62,7 @@
       <h1>AI Act RAG — build &amp; eval history</h1>
       <p class="sub">Retrieval-augmented assistant for EU AI Act compliance questions. Phase 3, iterating against a 41-question golden set.</p>
     </div>
-    <span class="tag">✓ Live: recursive + headers (Step 22)</span>
+    <span class="tag">✓ Live: recursive + headers + query decomposition (Steps 22, 24)</span>
   </header>
 
   <section class="kpis" aria-label="Current production metrics">
@@ -111,6 +111,9 @@
       <div class="m best"><span class="n">20</span><span class="t">Qrels made chunking-agnostic — recursive+headers now best on P/R</span><span class="r">P 0.41 / R 0.74</span></div>
       <div class="m best"><span class="n">21</span><span class="t">Full judge pass confirms it beats old production</span><span class="r">92.7% correct</span></div>
       <div class="m best"><span class="n">22</span><span class="t">Promoted to production</span><span class="r">live</span></div>
+      <div class="m"><span class="n">23</span><span class="t">Chain-of-thought alone doesn't fix the citation bug — decomposition still does</span><span class="r">tested vs. CoT</span></div>
+      <div class="m best"><span class="n">24</span><span class="t">Query decomposition wired into live pipeline via Groq</span><span class="r">reverses Step 11/19 rule</span></div>
+      <div class="m risk"><span class="n">25</span><span class="t">Re-verified live: citation bug confirmed non-deterministic, not fixed</span><span class="r">decomposition = reliable fix</span></div>
     </div>
   </section>
 
